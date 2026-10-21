@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -177,9 +178,13 @@ def _terraform_states(flag: bool) -> dict:
     Skipped without a usable Terraform (or without the AWS provider being able to plan): the
     Python half of this file is what CI runs; this half is what a developer runs before an apply.
     """
+    # Check PATH first: subprocess.run raises FileNotFoundError, not a non-zero exit,
+    # when the binary is missing (the CI python job has no Terraform).
+    if shutil.which("terraform") is None:
+        pytest.skip("terraform not on PATH")
     tf = subprocess.run(["terraform", "version"], capture_output=True, text=True)
     if tf.returncode != 0:
-        pytest.skip("terraform not on PATH")
+        pytest.skip("terraform not usable here")
     out = Path(subprocess.run(["mktemp"], capture_output=True, text=True).stdout.strip())
     plan = subprocess.run(
         [
