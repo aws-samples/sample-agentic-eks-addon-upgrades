@@ -1,0 +1,149 @@
+[project]
+name = "eks-addon-readiness"
+version = "2.0.0"
+description = "Deterministic EKS add-on upgrade-readiness pipeline: five stages, one document each"
+requires-python = ">=3.12"
+
+# The spine — Stages 2 to 5 — needs only pydantic. That is deliberate: the four
+# document stages are pure functions of documents, so their deployment packages
+# carry no transport, no SDK beyond boto3's S3 and DynamoDB use, and no model
+# client. Stage 1 is the only place heavier dependencies
+# appear, and they are declared as an optional extra so a stage Lambda cannot
+# accidentally ship them.
+dependencies = [
+  "boto3>=1.43.83",
+  "pydantic==2.13.4",
+]
+
+[project.optional-dependencies]
+# Stage 1 only: the EKS MCP transport used to read a private-endpoint cluster.
+scan = [
+  "mcp-proxy-for-aws==1.6.4",
+  "strands-agents==1.54.0",
+]
+
+[dependency-groups]
+# Test-only. pytest is pinned to the version v1 used, so a green run here means
+# the same thing it meant there.
+dev = [
+  "pytest==9.1.1",
+  # Lint. Pinned so `make lint` means the same thing on every machine and in CI.
+  "ruff==0.14.0",
+  # Not merely implied: without it the `aws login` credential provider raises
+  # MissingDependencyException, and any test that makes a live AWS call then fails for
+  # a reason that has nothing to do with what it checks. Test-only -- no runtime
+  # artifact carries it.
+  "botocore[crt]>=1.43.83",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["eks_addon_readiness"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# build/ holds the assembled Lambda packages, vendored third-party wheels included. Ruff only
+# honours .gitignore inside a git checkout, so it is excluded explicitly.
+extend-exclude = ["build"]
+
+[tool.ruff.lint.per-file-ignores]
+# The check drivers print one line per assertion, and the line IS the evidence: it names what
+# was checked and quotes the value that settled it. Wrapping those strings to 100 columns
+# would split quoted source text across lines and make the log harder to read than the code.
+"tests/*_checks.py" = ["E501"]
+"tests/run_checks.py" = ["E501", "RUF005"]
+# Test docstrings and assertion messages quote IAM statements, state names and file paths
+# verbatim, so a reader can grep them. Long lines are allowed in tests only.
+"tests/**/*.py" = ["E501"]
+# Doctest examples call key builders with full 64-character digests, and a doctest line cannot
+# be wrapped without changing what the example shows.
+"eks_addon_readiness/storage/keys.py" = ["E501"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# Style-only upgrades that would rewrite working code for no behavioural gain: %-formatting in
+# the fixed-width plain-text email table, and PEP 695 generics on one storage helper.
+ignore = ["UP031", "UP047"]
+# DIGEST-HASHED MODULES ARE EXCLUDED. Their source text is hashed into the stage ruleset
+# digests, so a lint autofix on any of them -- even to a comment -- changes every document a
+# stage produces and breaks reproducibility. Two groups:
+#   * the 29 modules carried byte-for-byte from v1
+#   * every other module listed in a `ruleset.py` RULESET_MODULES / RENDERER_MODULES tuple,
+#     plus the upgrade agent's prompt (hashed into the prompt digest)
+# Excluded rather than trusted to nobody running --fix.
+exclude = [
+  # carried from v1
+  "eks_addon_readiness/models.py",
+  "eks_addon_readiness/snapshot.py",
+  "eks_addon_readiness/knowledge.py",
+  "eks_addon_readiness/inventory/*.py",
+  "eks_addon_readiness/facts/series.py",
+  "eks_addon_readiness/facts/store.py",
+  "eks_addon_readiness/facts/gaps.py",
+  "eks_addon_readiness/facts/ledger.py",
+  "eks_addon_readiness/facts/catalogue.py",
+  "eks_addon_readiness/decide/kubernetes.py",
+  "eks_addon_readiness/decide/rules.py",
+  "eks_addon_readiness/decide/assessment.py",
+  "eks_addon_readiness/decide/engine.py",
+  "eks_addon_readiness/order/moves.py",
+  "eks_addon_readiness/order/reversibility.py",
+  "eks_addon_readiness/order/interleave.py",
+  "eks_addon_readiness/order/plan.py",
+  "eks_addon_readiness/scan/helm_labels.py",
+  "eks_addon_readiness/scan/digest.py",
+  "eks_addon_readiness/scan/ports.py",
+  "eks_addon_readiness/scan/workloads.py",
+  # hashed by a ruleset digest
+  "eks_addon_readiness/brief/boundary.py",
+  "eks_addon_readiness/brief/document.py",
+  "eks_addon_readiness/brief/issues.py",
+  "eks_addon_readiness/brief/prompt.py",
+  "eks_addon_readiness/brief/reuse.py",
+  "eks_addon_readiness/brief/walk.py",
+  "eks_addon_readiness/loop/resolve_loop.py",
+  "eks_addon_readiness/order/collapse.py",
+  "eks_addon_readiness/order/dedupe.py",
+  "eks_addon_readiness/order/floor.py",
+  "eks_addon_readiness/order/latest.py",
+  "eks_addon_readiness/order/recommend.py",
+  "eks_addon_readiness/research/freshness.py",
+  "eks_addon_readiness/upgrade_lane/prompt.py",
+  "eks_addon_readiness/view/build.py",
+  "eks_addon_readiness/view/model.py",
+  "eks_addon_readiness/view/render/*.py",
+]
+
+[tool.bandit]
+# `make scan` and CI run bandit at MEDIUM severity and above, over the shipped code only.
+# B310 (urllib.urlopen with a URL that could be file://) is skipped because every call site is
+# https-only: freshness.py and fetch_issues.py build https://api.github.com/... URLs, and
+# research/sources/web_docs.py refuses any scheme other than https before it opens a URL.
+# freshness.py is digest-pinned, so an inline `# nosec` there would change a ruleset digest.
+exclude_dirs = ["tests", ".venv", "build"]
+skips = ["B310"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Strict on purpose. `--strict-markers` makes a typo'd marker an error rather than a
+# silently skipped test; `--strict-config` makes a malformed setting in this table an
+# error rather than a warning nobody reads.
+addopts = "--strict-markers --strict-config"
+# `terraform`: tests that render the state machine by running `terraform plan` against the
+# platform component. They skip without a usable Terraform, so CI's green says nothing about
+# them; run them before an apply that touches `workflow.tf`.
+markers = ["terraform: renders the state machine with terraform plan; skips without terraform"]
+# NOTE: this suite does NOT collect doctests. `addopts` carries no
+# `--doctest-modules`, so a green `uv run pytest` says nothing about them --
+# measured: 31 tests collected, 0 doctest items.
+#
+# The doctests ARE contracts in this project -- the S3 key shapes, the chart-label
+# split, the image-reference parse -- and they run in a SEPARATE lane (lane 2 of
+# `tests/run_checks.py`).
+#
+# `--doctest-modules` is deliberately NOT added here. It would change what a green
+# run means, which needs the user's word; this file is their boundary.

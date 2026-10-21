@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Lambda and CodeBuild packages, produced by scripts/build-packages.sh
+build/
+*.zip
+
+# Terraform working files and local state
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform inputs: copy the *.example files and fill them in. The filled-in copies carry
+# account IDs, role ARNs and email addresses, so they never belong in the repository.
+terraform.tfvars
+*.auto.tfvars
+infra/terraform/deploy/*.tfvars
+infra/terraform/cluster-access/*.tfvars
+
+# Build and test logs
+*.log
+
+# Provider lock files ARE committed: they pin the provider versions this sample was tested
+# against. Only the two roots have one (deploy/ and cluster-access/).
+
+# Local environment
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,43 @@
+# pre-commit hooks. Install once with:  uvx pre-commit install
+#
+# Only CHECKING hooks, no fixers for whitespace or line endings: several modules are
+# digest-pinned (their source text is hashed into every document they produce), so an
+# automatic whitespace fix would change a ruleset digest and fail `make checks`.
+# Hooks are pinned to commit SHAs; the tag is in the comment.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-json
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: detect-aws-credentials
+        args: ["--allow-missing-credentials"]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: f9351c924055bf6c7b4a4670237d3ce141e9f57c # v0.14.0
+    hooks:
+      - id: ruff-check
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: 80c8033123f6d6b9ccd1a9458562ea4180742af7 # v1.109.2
+    hooks:
+      - id: terraform_fmt
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: generated-agent-files
+        name: agent tool schemas match their Python source
+        entry: bash -c 'uv run python -m tools.brief.generate --check && uv run python -m tools.research.generate --check'
+        language: system
+        pass_filenames: false
+        files: ^(eks_addon_readiness|tools|agents)/

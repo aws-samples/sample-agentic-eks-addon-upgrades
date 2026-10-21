@@ -1,0 +1,11 @@
+# Gitleaks configuration: the default rules, plus paths that hold public or synthetic data.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public Helm chart renders, lock files and synthetic test digests"
+paths = [
+  '''^tests/fixtures/''',
+  '''(^|/)uv\.lock$''',
+  '''(^|/)\.terraform\.lock\.hcl$''',
+]

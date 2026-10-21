@@ -1,0 +1,218 @@
+{
+ "extraction": {
+  "assessment": {
+   "action": "LATEST_UNVERIFIED",
+   "caveats": [
+    "Argo Rollouts' own installation guide (docs/installation.md, master branch) states only: 'Check e2e testing file to see what the Kubernetes version is being fully tested,' pointing readers to a CI file rather than making a first-party compatibility statement, so this could not be used as compatibility evidence per the research rules.",
+    "Because installed_version_status is NOT_STATED and no statement covers Kubernetes 1.35 or 1.36 for any series, upgrade ordering relative to the EKS control-plane upgrade cannot be determined from project documentation; validate the recommended v1.10.0 upgrade against a real 1.35/1.36 cluster before rolling out broadly.",
+    "The chart used to install this component is the community-maintained argo-helm chart (argoproj/argo-helm), a separate repository from argo-rollouts itself; that project's own README notes CRDs are best applied manually via 'kubectl apply --server-side -k <chart>/crds' when not letting Helm manage them.",
+    "docs/installation.md's 'Upgrading Argo Rollouts' section gives only general operational guidance ('Delete the previous version of the controller and apply/install the new one'; in-flight Rollouts are paused and resumed by the new controller) with no version-specific migration notes for 1.6.x -> 1.10.x."
+   ],
+   "cited_sources": [
+    {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/argoproj/argo-rollouts/master/README.md",
+     "used_for": "checked for a compatibility matrix in the project README (none found)"
+    },
+    {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/argoproj/argo-rollouts/master/docs/installation.md",
+     "used_for": "'Supported versions' and 'Upgrading Argo Rollouts' sections; source of the UNSTATED compatibility statement"
+    },
+    {
+     "revision": "stable",
+     "url": "https://argo-rollouts.readthedocs.io/en/stable/",
+     "used_for": "checked the current documentation site index for any compatibility statement (none found)"
+    },
+    {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases",
+     "used_for": "release list page 1 (v1.10.0 down to v1.8.1) - source of latest stable release v1.10.0"
+    },
+    {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases?page=2",
+     "used_for": "release list page 2 (v1.8.0 down to v1.6.4), including the installed release v1.6.6"
+    },
+    {
+     "revision": "HEAD",
+     "url": "https://argoproj.github.io/argo-helm/",
+     "used_for": "chart repository add line ('helm repo add argo https://argoproj.github.io/argo-helm') for the community argo-helm chart"
+    }
+   ],
+   "confidence_rationale": "No first-party compatibility matrix, supported-range statement, or relative support policy for Kubernetes versions exists in the argo-rollouts GitHub repository (README.md) or its documentation site (argo-rollouts.readthedocs.io); the docs/installation.md 'Supported versions' section only directs readers to the project's own e2e CI workflow file, which the research rules explicitly exclude as evidence. With no compatibility statement covering either the installed 1.6.x series or the target Kubernetes 1.36, the only defensible recommendation is the latest stable release, v1.10.0, per the LATEST_UNVERIFIED rule, which caps confidence at LOW.",
+   "covers_current_kubernetes": null,
+   "covers_target_kubernetes": null,
+   "current_kubernetes": "1.35",
+   "derivation": null,
+   "evidence_tier": "NONE",
+   "installed_version": "1.6.6",
+   "installed_version_statement_refs": [
+    0
+   ],
+   "installed_version_status": "NOT_STATED",
+   "not_found": [
+    "No compatibility matrix or supported-Kubernetes-version table exists in the argo-rollouts repository (README.md) or its documentation site (argo-rollouts.readthedocs.io index page).",
+    "The docs/installation.md 'Supported versions' section only points to the project's e2e CI testing workflow file (.github/workflows/testing.yaml), which is excluded as evidence per the research rules; no textual Kubernetes version range is stated there.",
+    "No dedicated version-to-version upgrade/migration guide (e.g., an UPGRADING.md covering minor-to-minor steps or breaking changes) was found beyond the general 'Upgrading Argo Rollouts' operational note in docs/installation.md.",
+    "A release could not be located for every minor series above 1.6.x on the single releases page fetched per series beyond what is quoted here; the full v1.7.x-v1.10.x tag history exists but was only partially transcribed (one representative release per series)."
+   ],
+   "proposed_confidence": "LOW",
+   "recommendation_statement_refs": [
+    1
+   ],
+   "recommended_chart_version": null,
+   "recommended_series": "1.10.x",
+   "recommended_version": "1.10.0",
+   "target_kubernetes": "1.36",
+   "upgrade_ordering": "UNKNOWN",
+   "upgrade_path_claim_refs": []
+  },
+  "canonical_repository": "https://github.com/argoproj/argo-rollouts",
+  "chart": {
+   "quote": "helm repo add argo https://argoproj.github.io/argo-helm",
+   "repository_url": "https://argoproj.github.io/argo-helm",
+   "source": {
+    "revision": "HEAD",
+    "url": "https://argoproj.github.io/argo-helm/"
+   }
+  },
+  "claims": [],
+  "component_id": "argo-rollouts",
+  "found": true,
+  "no_compatibility_found": true,
+  "not_found_reason": "No first-party Kubernetes-version compatibility matrix, supported-range statement, or relative support policy exists in the argo-rollouts repository or its documentation site; the only pointer is to a CI workflow file, which is excluded as evidence.",
+  "official_documentation": [
+   "https://argo-rollouts.readthedocs.io",
+   "https://argoproj.github.io/argo-helm"
+  ],
+  "recommended_version": "1.10.0",
+  "releases": [
+   {
+    "quote": "<h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.10.0-rc1...v1.10.0\">v1.10.0</a> (2026-08-05)</h2>",
+    "source": {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases"
+    },
+    "version": "1.10.0"
+   },
+   {
+    "quote": "<h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.9.0...v1.9.1\">v1.9.1</a> (2026-07-06)</h2>",
+    "source": {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases"
+    },
+    "version": "1.9.1"
+   },
+   {
+    "quote": "<p><strong>Full Changelog</strong>: <a class=\"commit-link\" href=\"https://github.com/argoproj/argo-rollouts/compare/v1.8.3...v1.8.4\"><tt>v1.8.3...v1.8.4</tt></a></p>",
+    "source": {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases"
+    },
+    "version": "1.8.4"
+   },
+   {
+    "quote": "<p><strong>Full Changelog</strong>: <a class=\"commit-link\" href=\"https://github.com/argoproj/argo-rollouts/compare/v1.7.1...v1.7.2\"><tt>v1.7.1...v1.7.2</tt></a></p>",
+    "source": {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases?page=2"
+    },
+    "version": "1.7.2"
+   },
+   {
+    "quote": "<h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.6.5...v1.6.6\">v1.6.6</a> (2024-02-12)</h2>",
+    "source": {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases?page=2"
+    },
+    "version": "1.6.6"
+   },
+   {
+    "quote": "<h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.6.4...v1.6.5\">v1.6.5</a> (2024-01-25)</h2>",
+    "source": {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases?page=2"
+    },
+    "version": "1.6.5"
+   },
+   {
+    "quote": "<p><strong>Full Changelog</strong>: <a class=\"commit-link\" href=\"https://github.com/argoproj/argo-rollouts/compare/v1.6.3...v1.6.4\"><tt>v1.6.3...v1.6.4</tt></a></p>",
+    "source": {
+     "revision": "HEAD",
+     "url": "https://github.com/argoproj/argo-rollouts/releases?page=2"
+    },
+    "version": "1.6.4"
+   }
+  ],
+  "statements": [
+   {
+    "kind": "UNSTATED",
+    "qualifier_quote": null,
+    "quote": "Check [e2e testing file](https://github.com/argoproj/argo-rollouts/blob/master/.github/workflows/testing.yaml#L82-L89) to see what the Kubernetes version is being fully tested.",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/argoproj/argo-rollouts/master/docs/installation.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [],
+    "version_spec": "1.6.x"
+   },
+   {
+    "kind": "UNSTATED",
+    "qualifier_quote": null,
+    "quote": "Check [e2e testing file](https://github.com/argoproj/argo-rollouts/blob/master/.github/workflows/testing.yaml#L82-L89) to see what the Kubernetes version is being fully tested.",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/argoproj/argo-rollouts/master/docs/installation.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [],
+    "version_spec": "1.10.x"
+   }
+  ],
+  "version_series": "1.6.x"
+ },
+ "pages": [
+  {
+   "url": "https://argo-rollouts.readthedocs.io/en/stable/",
+   "revision": "stable",
+   "body": "\n<!doctype html>\n<html lang=\"en\" class=\"no-js\">\n  <head>\n    \n      <meta charset=\"utf-8\">\n      <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n      \n      \n      \n        <link rel=\"canonical\" href=\"https://argo-rollouts.readthedocs.io/\">\n      \n      <link rel=\"icon\" href=\"assets/images/favicon.png\">\n      <meta name=\"generator\" content=\"mkdocs-1.4.2, mkdocs-material-8.5.10",
+   "status": 200
+  },
+  {
+   "url": "https://argoproj.github.io/argo-helm/",
+   "revision": "HEAD",
+   "body": "<!DOCTYPE html>\n<html lang=\"en-US\">\n  <head>\n    <meta charset=\"UTF-8\">\n\n<!-- Begin Jekyll SEO tag v2.8.0 -->\n<title>Argo Helm Charts | argo-helm</title>\n<meta name=\"generator\" content=\"Jekyll v3.10.0\" />\n<meta property=\"og:title\" content=\"Argo Helm Charts\" />\n<meta property=\"og:locale\" content=\"en_US\" />\n<meta name=\"description\" content=\"ArgoProj Helm Charts\" />\n<meta property=\"og:description\" co",
+   "status": 200
+  },
+  {
+   "url": "https://github.com/argoproj/argo-rollouts/releases",
+   "revision": "HEAD",
+   "body": "t=\"true\" class=\"markdown-body tmp-my-3\"><h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.10.0-rc1...v1.10.0\">v1.10.0</a> (2026-08-05)</h2>\n<h3>Fix</h3>\n<ul>\n<li>guard empty Value\n...\nt=\"true\" class=\"markdown-body tmp-my-3\"><h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.9.0...v1.9.1\">v1.9.1</a> (2026-07-06)</h2>\n<p>Minor security release to address <a\n...\nollouts/pull/4592\">#4592</a></li>\n</ul>\n<p><strong>Full Changelog</strong>: <a class=\"commit-link\" href=\"https://github.com/argoproj/argo-rollouts/compare/v1.8.3...v1.8.4\"><tt>v1.8.3...v1.8.4</tt></a></p></div>\n</div>\n  <div data-view-component",
+   "status": 200
+  },
+  {
+   "url": "https://github.com/argoproj/argo-rollouts/releases?page=2",
+   "revision": "HEAD",
+   "body": "l/3780/hovercard\">#3780</a>)</li>\n</ul>\n<p><strong>Full Changelog</strong>: <a class=\"commit-link\" href=\"https://github.com/argoproj/argo-rollouts/compare/v1.7.1...v1.7.2\"><tt>v1.7.1...v1.7.2</tt></a></p></div>\n</div>\n  <div data-view-component\n...\nt=\"true\" class=\"markdown-body tmp-my-3\"><h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.6.5...v1.6.6\">v1.6.6</a> (2024-02-12)</h2>\n<h3>Fix</h3>\n<ul>\n<li>stuck rollout whe\n...\nt=\"true\" class=\"markdown-body tmp-my-3\"><h2><a href=\"https://github.com/argoproj/argo-rollouts/compare/v1.6.4...v1.6.5\">v1.6.5</a> (2024-01-25)</h2>\n<h3>Chore</h3>\n<ul>\n<li>add logging con\n...\nl/3216/hovercard\">#3216</a>)</li>\n</ul>\n<p><strong>Full Changelog</strong>: <a class=\"commit-link\" href=\"https://github.com/argoproj/argo-rollouts/compare/v1.6.3...v1.6.4\"><tt>v1.6.3...v1.6.4</tt></a></p></div>\n</div>\n  <div data-view-component",
+   "status": 200
+  },
+  {
+   "url": "https://raw.githubusercontent.com/argoproj/argo-rollouts/master/README.md",
+   "revision": "master",
+   "body": "\n# Argo Rollouts - Progressive Delivery for Kubernetes\n\n[![codecov](https://codecov.io/gh/argoproj/argo-rollouts/branch/master/graph/badge.svg)](https://codecov.io/gh/argoproj/argo-rollouts)\n[![slack](https://img.shields.io/badge/slack-argoproj-brightgreen.svg?logo=slack)](https://argoproj.github.io/community/join-slack)\n[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/",
+   "status": 200
+  },
+  {
+   "url": "https://raw.githubusercontent.com/argoproj/argo-rollouts/master/docs/installation.md",
+   "revision": "master",
+   "body": "ter version\n```\n\n## Supported versions\n\nCheck [e2e testing file](https://github.com/argoproj/argo-rollouts/blob/master/.github/workflows/testing.yaml#L82-L89) to see what the Kubernetes version is being fully tested.\n\nYou can switch to different tags to se\n...\nter version\n```\n\n## Supported versions\n\nCheck [e2e testing file](https://github.com/argoproj/argo-rollouts/blob/master/.github/workflows/testing.yaml#L82-L89) to see what the Kubernetes version is being fully tested.\n\nYou can switch to different tags to se",
+   "status": 200
+  }
+ ]
+}

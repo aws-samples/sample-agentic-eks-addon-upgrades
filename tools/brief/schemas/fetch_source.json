@@ -1,0 +1,36 @@
+[
+  {
+    "description": "Fetch one page from the component's own repository or documentation. Use it for release notes, a CHANGELOG, an UPGRADING or migration guide, a docs upgrade page, or a release pull request body. Returns the page text. Refuses any host the component does not declare as its own, and the refusal explains what is in scope. Every successful fetch is recorded, and your quotes are checked against those recorded bytes.",
+    "inputSchema": {
+      "properties": {
+        "canonical_repository": {
+          "description": "The component's canonical GitHub repository. Supplying it permits the hosts that serve that repository; without it only hosts the component already declares are readable. It is given to you above.",
+          "type": "string"
+        },
+        "official_documentation": {
+          "description": "Documentation hosts the component declares as its own. Given to you above; pass them to read an upgrade guide off a docs site.",
+          "type": "array"
+        },
+        "revision": {
+          "description": "The commit or tag this URL is pinned to, or `issue-<number>` for a recorded issue. Empty only for an unversioned documentation page. A date is not a revision and is rejected downstream. CITE THE SAME revision you fetched with -- the quote check is exact on it.",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "The brief session this fetch belongs to, given to you above. Scopes the recorded evidence so the verification layer finds exactly the bytes this brief read. OMITTING IT MEANS EVERY QUOTE YOU WRITE IS REPORTED UNVERIFIED, because nothing can locate the page again.",
+          "type": "string"
+        },
+        "url": {
+          "description": "Absolute https URL. A GitHub blob URL is read as its raw bytes. The GitHub API is in scope. Use https://api.github.com/repos/OWNER/REPO/releases?per_page=100 to ENUMERATE which releases exist, and https://api.github.com/repos/OWNER/REPO/releases/tags/TAG to fetch the ONE release you intend to quote -- then cite that second URL with revision=TAG. Quoting from the listing while citing a per-tag URL is the commonest way an item is reported unverified.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision",
+        "session_id",
+        "url"
+      ],
+      "type": "object"
+    },
+    "name": "fetch_source"
+  }
+]

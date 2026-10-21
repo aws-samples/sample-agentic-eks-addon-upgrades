@@ -1,0 +1,293 @@
+{
+ "extraction": {
+  "assessment": {
+   "action": "UPGRADE",
+   "caveats": [
+    "The compatibility matrix states only floors ('X+') with no upper bound, so coverage of Kubernetes 1.36 by the 0.9.x series is inferred from the absence of a stated ceiling rather than an explicit statement naming 1.36; the same is true for the 0.6.x row that covers the installed version.",
+    "The README states that metrics-server follows the Kubernetes Version Skew Policy for kube-apiserver compatibility, which is a general policy reference rather than a component-specific numeric rule, so it was not used for an N-2 style derivation.",
+    "No first-party, step-by-step sequential-minor upgrade guide (e.g. 'upgrade one minor at a time') was found for metrics-server; only the compatibility matrix and per-release changelogs describing dependency bumps were available.",
+    "The v0.9.0 release notes mention bumping Kubernetes dependencies to v1.36.2, which corroborates (but does not itself constitute) the matrix's implicit coverage of Kubernetes 1.36 by the 0.9.x series.",
+    "Rows for 0.4.x and 0.5.x carry a footnote that Kubernetes versions lower than v1.16 require the `--authorization-always-allow-paths=/livez,/readyz` flag; this is unrelated to the 1.35->1.36 upgrade but is preserved for completeness of the transcribed matrix."
+   ],
+   "cited_sources": [
+    {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md",
+     "used_for": "compatibility matrix (Metrics Server series vs supported Kubernetes version, all rows)"
+    },
+    {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases",
+     "used_for": "release list for v0.9.0, v0.8.1, v0.8.0, v0.7.2, v0.7.1 and the v0.9.0 changelog's Kubernetes dependency bump note"
+    },
+    {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases?page=2",
+     "used_for": "release list for v0.7.0, v0.6.4 (installed), v0.6.3, v0.6.2"
+    },
+    {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/charts/metrics-server/README.md",
+     "used_for": "chart repository (the `helm repo add` line on the chart's install page)"
+    }
+   ],
+   "confidence_rationale": "The compatibility matrix in metrics-server's README (kubernetes-sigs/metrics-server, master) lists the newest series 0.9.x with a floor of '1.34+' and no stated ceiling, which is the only series whose stated floor is at or below both the current Kubernetes minor (1.35) and the target minor (1.36). Because every row in the matrix is a floor-only (PUBLISHED_MINIMUM) statement rather than an explicit range naming 1.36, confidence is capped at MEDIUM even though the source is a first-party matrix in the repository.",
+   "covers_current_kubernetes": true,
+   "covers_target_kubernetes": true,
+   "current_kubernetes": "1.35",
+   "derivation": null,
+   "evidence_tier": "MATRIX_IN_REPOSITORY",
+   "installed_version": "0.6.4",
+   "installed_version_statement_refs": [
+    3
+   ],
+   "installed_version_status": "NOT_STATED",
+   "not_found": [
+    "No explicit SUPPORTED_RANGE or EXPLICIT_MAXIMUM statement naming Kubernetes 1.35 or 1.36 was found anywhere in the repository; all evidence for the newest series is a bare floor ('1.34+').",
+    "No dedicated upgrade-path or migration document (e.g. UPGRADING.md) was found in the repository; upgrade caveats were inferred only from release changelog headings ('Changes since vX.Y.Z').",
+    "No pre-release (alpha/beta/rc) versions of 0.9.x were found; v0.9.0 appears to be the only 0.9.x release visible in the releases list at the time of this research."
+   ],
+   "proposed_confidence": "MEDIUM",
+   "recommendation_statement_refs": [
+    0
+   ],
+   "recommended_chart_version": null,
+   "recommended_series": "0.9.x",
+   "recommended_version": "0.9.0",
+   "target_kubernetes": "1.36",
+   "upgrade_ordering": "BEFORE_CLUSTER_UPGRADE",
+   "upgrade_path_claim_refs": []
+  },
+  "canonical_repository": "https://github.com/kubernetes-sigs/metrics-server",
+  "chart": {
+   "quote": "helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/",
+   "repository_url": "https://kubernetes-sigs.github.io/metrics-server/",
+   "source": {
+    "revision": "master",
+    "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/charts/metrics-server/README.md"
+   }
+  },
+  "claims": [
+   {
+    "claimed_structured": false,
+    "field": "kubernetes_dependency_bump for 0.9.0",
+    "quote": "Bump Kubernetes dependencies to v1.36.2. (<a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/slashpai/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/slashpai\">@slashpai</a>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases"
+    },
+    "value": "v1.36.2"
+   }
+  ],
+  "component_id": "metrics-server",
+  "found": true,
+  "no_compatibility_found": false,
+  "not_found_reason": null,
+  "official_documentation": [
+   "https://github.com/kubernetes-sigs/metrics-server/blob/master/README.md",
+   "https://github.com/kubernetes-sigs/metrics-server/blob/master/charts/metrics-server/README.md"
+  ],
+  "recommended_version": "0.9.0",
+  "releases": [
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-580aebd8\">v0.9.0</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases"
+    },
+    "version": "0.9.0"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-85ef6e32\">v0.8.1</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases"
+    },
+    "version": "0.8.1"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-f9c18535\">v0.8.0</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases"
+    },
+    "version": "0.8.0"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-8e4159be\">v0.7.2</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases"
+    },
+    "version": "0.7.2"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-73b26fbb\">v0.7.1</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases"
+    },
+    "version": "0.7.1"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-c376b4d5\">v0.7.0</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases?page=2"
+    },
+    "version": "0.7.0"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-d45f4b8a\">v0.6.4</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases?page=2"
+    },
+    "version": "0.6.4"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-8117fbcc\">v0.6.3</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases?page=2"
+    },
+    "version": "0.6.3"
+   },
+   {
+    "quote": "<h2 class=\"sr-only\" id=\"hd-86c5b40f\">v0.6.2</h2>",
+    "source": {
+     "revision": "master",
+     "url": "https://github.com/kubernetes-sigs/metrics-server/releases?page=2"
+    },
+    "version": "0.6.2"
+   }
+  ],
+  "statements": [
+   {
+    "kind": "PUBLISHED_MINIMUM",
+    "qualifier_quote": null,
+    "quote": "0.9.x          | `metrics.k8s.io/v1beta1`  | 1.34+",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": "1.34",
+    "stated_minors": [],
+    "version_spec": "0.9.x"
+   },
+   {
+    "kind": "PUBLISHED_MINIMUM",
+    "qualifier_quote": null,
+    "quote": "0.8.x          | `metrics.k8s.io/v1beta1`  | 1.31+",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": "1.31",
+    "stated_minors": [],
+    "version_spec": "0.8.x"
+   },
+   {
+    "kind": "PUBLISHED_MINIMUM",
+    "qualifier_quote": null,
+    "quote": "0.7.x          | `metrics.k8s.io/v1beta1`  | 1.27+",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": "1.27",
+    "stated_minors": [],
+    "version_spec": "0.7.x"
+   },
+   {
+    "kind": "PUBLISHED_MINIMUM",
+    "qualifier_quote": null,
+    "quote": "0.6.x          | `metrics.k8s.io/v1beta1`  | 1.25+",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": "1.25",
+    "stated_minors": [],
+    "version_spec": "0.6.x"
+   },
+   {
+    "kind": "PUBLISHED_MINIMUM",
+    "qualifier_quote": "*Kubernetes versions lower than v1.16 require passing the `--authorization-always-allow-paths=/livez,/readyz` command line flag",
+    "quote": "0.5.x          | `metrics.k8s.io/v1beta1`  | *1.8+",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": "1.8",
+    "stated_minors": [],
+    "version_spec": "0.5.x"
+   },
+   {
+    "kind": "PUBLISHED_MINIMUM",
+    "qualifier_quote": "*Kubernetes versions lower than v1.16 require passing the `--authorization-always-allow-paths=/livez,/readyz` command line flag",
+    "quote": "0.4.x          | `metrics.k8s.io/v1beta1`  | *1.8+",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": "1.8",
+    "stated_minors": [],
+    "version_spec": "0.4.x"
+   },
+   {
+    "kind": "SUPPORTED_RANGE",
+    "qualifier_quote": null,
+    "quote": "0.3.x          | `metrics.k8s.io/v1beta1`  | 1.8-1.21",
+    "served_api_versions": [],
+    "source": {
+     "revision": "master",
+     "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md"
+    },
+    "stated_maximum_inclusive": "1.21",
+    "stated_minimum": "1.8",
+    "stated_minors": [],
+    "version_spec": "0.3.x"
+   }
+  ],
+  "version_series": "0.6.x"
+ },
+ "pages": [
+  {
+   "url": "https://github.com/kubernetes-sigs/metrics-server/releases",
+   "revision": "master",
+   "body": "op: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-580aebd8\">v0.9.0</h2>\n\n        <div class\n...\nop: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-85ef6e32\">v0.8.1</h2>\n\n        <div class\n...\nop: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-f9c18535\">v0.8.0</h2>\n\n        <div class\n...\nop: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-8e4159be\">v0.7.2</h2>\n\n        <div class\n...\nop: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-73b26fbb\">v0.7.1</h2>\n\n        <div class\n...\nments</h3>\n<ul>\n<li>Bump Kubernetes dependencies to v1.36.2. (<a class=\"user-mention notranslate\" data-hovercard-type=\"user\" data-hovercard-url=\"/users/slashpai/hovercard\" data-octo-click=\"hovercard-link-click\" data-octo-dimensions=\"link_type:self\" href=\"https://github.com/slashpai\">@slashpai</a>, <a class=\"user-men",
+   "status": 200
+  },
+  {
+   "url": "https://github.com/kubernetes-sigs/metrics-server/releases?page=2",
+   "revision": "master",
+   "body": "op: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-c376b4d5\">v0.7.0</h2>\n\n        <div class\n...\nop: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-d45f4b8a\">v0.6.4</h2>\n\n        <div class\n...\nop: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-8117fbcc\">v0.6.3</h2>\n\n        <div class\n...\nop: 24px;\">\n        <h2 class=\"sr-only\" id=\"hd-86c5b40f\">v0.6.2</h2>\n\n        <div class",
+   "status": 200
+  },
+  {
+   "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/README.md",
+   "revision": "master",
+   "body": "-------------------\n0.9.x          | `metrics.k8s.io/v1beta1`  | 1.34+\n0.8.x          | `m\n...\no/v1beta1`  | 1.34+\n0.8.x          | `metrics.k8s.io/v1beta1`  | 1.31+\n0.7.x          | `m\n...\no/v1beta1`  | 1.31+\n0.7.x          | `metrics.k8s.io/v1beta1`  | 1.27+\n0.6.x          | `m\n...\no/v1beta1`  | 1.27+\n0.6.x          | `metrics.k8s.io/v1beta1`  | 1.25+\n0.5.x          | `m\n...\no/v1beta1`  | 1.25+\n0.5.x          | `metrics.k8s.io/v1beta1`  | *1.8+\n0.4.x          | `m\n...\no/v1beta1`  | *1.8+\n0.4.x          | `metrics.k8s.io/v1beta1`  | *1.8+\n0.3.x          | `m\n...\no/v1beta1`  | *1.8+\n0.3.x          | `metrics.k8s.io/v1beta1`  | 1.8-1.21\n\n*Kubernetes versio",
+   "status": 200
+  },
+  {
+   "url": "https://raw.githubusercontent.com/kubernetes-sigs/metrics-server/master/charts/metrics-server/README.md",
+   "revision": "master",
+   "body": "elm.sh/).\n\n```shell\nhelm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/\n```\n\nAfter you've i",
+   "status": 200
+  }
+ ]
+}

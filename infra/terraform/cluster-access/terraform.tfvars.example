@@ -1,0 +1,46 @@
+# Onboards ONE cluster. Copy, replace every <PLACEHOLDER>, apply. Repeat per cluster,
+# each in its own Terraform workspace:
+#
+#   cp terraform.tfvars.example <CLUSTER_NAME>.tfvars
+#   terraform init
+#   terraform workspace new <CLUSTER_NAME>      # `workspace select` on later runs
+#   terraform apply -var-file=<CLUSTER_NAME>.tfvars
+#
+# Every variable this root accepts is listed below. REQUIRED values are <PLACEHOLDERS>;
+# everything else is already set to its default.
+
+# =====================================================================================
+# REQUIRED
+# =====================================================================================
+
+# The cluster to onboard. Its authentication mode must be API or API_AND_CONFIG_MAP.
+cluster_name = "<CLUSTER_NAME>"
+
+# From the deploy root, after it is applied:
+#   terraform -chdir=../deploy output -raw scan_role_arn
+platform_scan_role_arn = "<SCAN_ROLE_ARN>"
+
+# =====================================================================================
+# OPTIONAL -- defaults shown
+# =====================================================================================
+
+# Region the cluster is in.
+region = "us-east-1"
+
+# Must match the deploy root's name_prefix.
+name_prefix = "eks-addon-upgrades"
+
+# Kubernetes group the read role is mapped into.
+kubernetes_group = "eks-addon-readiness-readers"
+
+# Whether Terraform applies a small read-only ClusterRole for CRD and APIService reads.
+# The cluster's Kubernetes API server must be reachable from where Terraform runs. If it is
+# not, set false and deliver rbac.tf's ClusterRole through the cluster's GitOps; until then
+# the report shows those reads as gaps.
+apply_supplementary_rbac = true
+
+# Tags applied to every resource.
+tags = {
+  Project   = "eks-addon-upgrades"
+  ManagedBy = "terraform"
+}

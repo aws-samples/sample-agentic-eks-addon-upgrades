@@ -1,0 +1,18 @@
+[
+  {
+    "description": "Declare the component's canonical GitHub repository, which permits fetching from the hosts that serve it. Only needed when no repository was given to you above.",
+    "inputSchema": {
+      "properties": {
+        "repository_url": {
+          "description": "The component's canonical GitHub repository URL.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository_url"
+      ],
+      "type": "object"
+    },
+    "name": "register_repository"
+  }
+]

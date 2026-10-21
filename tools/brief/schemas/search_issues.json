@@ -1,0 +1,39 @@
+[
+  {
+    "description": "Search the component's GitHub issues for problems many people have hit. Returns each issue's title, body, url, comment count, reaction count and dates, so you can judge how widely an issue is hit from numbers rather than impression. Every result is recorded and citable. IMPORTANT: the result tells you whether the search actually ran. If it reports that it could not look -- a rate limit, no token, an invisible repository -- do NOT report an absence of issues; say the section could not be produced.",
+    "inputSchema": {
+      "properties": {
+        "labels": {
+          "description": "Optional comma-separated labels, e.g. `bug` or `bug,regression`. Empty searches every label.",
+          "type": "string"
+        },
+        "min_comments": {
+          "description": "Optional floor on the comment count, for finding issues with a long trail. 0 or absent applies no floor.",
+          "type": "integer"
+        },
+        "repository": {
+          "description": "The GitHub repository, as `owner/repo` or its full URL.",
+          "type": "string"
+        },
+        "search_terms": {
+          "description": "Optional free text ANDed into the query, e.g. a version number or a symptom. Leave empty for all open issues matching the labels.",
+          "type": "string"
+        },
+        "session_id": {
+          "description": "The brief session this search belongs to, given to you above. Scopes the recorded issues so a quote from an issue title or body can be verified, and records whether the search ran at all. OMITTING IT MEANS EVERY ISSUE QUOTE IS REPORTED UNVERIFIED.",
+          "type": "string"
+        },
+        "state": {
+          "description": "`open`, `closed` or `all`. Prefer `open`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "search_issues"
+  }
+]

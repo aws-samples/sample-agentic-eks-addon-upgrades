@@ -1,0 +1,40 @@
+# Checkov configuration. `make scan` and CI run it against infra/terraform.
+#
+# Each skip below is a hardening control this SAMPLE deliberately leaves to the deployer,
+# not a defect. docs/security.md ("Things to review before you use this") tells a reader to
+# revisit them. Every other check must pass.
+framework:
+  - terraform
+directory:
+  - infra/terraform
+download-external-modules: false
+compact: true
+quiet: true
+skip-check:
+  # Customer-managed KMS keys. S3 SSE, DynamoDB default encryption and Lambda environment
+  # encryption use AWS-owned or AWS-managed keys; a CMK for those is a per-organisation choice.
+  # CloudWatch log groups ARE now encrypted with a customer-managed key (modules/platform/kms.tf),
+  # so CKV_AWS_158 is no longer skipped.
+  - CKV_AWS_119 # DynamoDB CMK
+  - CKV_AWS_145 # S3 KMS by default
+  - CKV_AWS_173 # Lambda environment variable KMS
+  # Log retention is 30 days by default (`log_retention_days`), sized for a sample.
+  - CKV_AWS_338
+  # Lambda networking and runtime hardening. Functions reach GitHub and upstream project sites
+  # over the internet; a VPC with controlled egress, X-Ray, DLQs, reserved concurrency and code
+  # signing are deployment choices. Step Functions is the caller, owns retries and records failures.
+  - CKV_AWS_117 # Lambda in VPC
+  - CKV_AWS_50 # X-Ray
+  - CKV_AWS_116 # DLQ
+  - CKV_AWS_115 # reserved concurrency
+  - CKV_AWS_272 # code signing
+  # S3 document bucket: cross-region replication is an account-level choice. The bucket is
+  # versioned, blocks public access, denies non-TLS requests, and now has server access logging
+  # (modules/platform/storage.tf), so CKV_AWS_18 is no longer skipped.
+  - CKV_AWS_144 # cross-region replication
+  # Resource-specific findings are skipped INLINE, at the resource, with their reason:
+  #   CKV2_AWS_62              modules/platform/storage.tf          aws_s3_bucket.documents
+  #   CKV_AWS_18, CKV2_AWS_62  modules/platform/storage.tf          aws_s3_bucket.access_logs (cannot log to itself; write-only sink)
+  #   CKV_AWS_28               modules/platform/upgrade_approval.tf aws_dynamodb_table.upgrade_tokens
+  #   CKV_AWS_356, CKV_AWS_111, CKV_AWS_109  modules/platform/kms.tf  aws_iam_policy_document.logs_kms (KMS key policy)
+  #   CKV_AWS_356, CKV_AWS_111 modules/platform/release_gate.tf, workflow.tf (policy documents)

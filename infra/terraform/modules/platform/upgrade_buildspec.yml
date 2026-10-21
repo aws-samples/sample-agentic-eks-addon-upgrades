@@ -1,0 +1,775 @@
+# The upgrade lane's buildspec: the one place in this project that changes a cluster.
+#
+# WHAT RUNS HERE IS DETERMINISTIC AND WHAT DECIDED IT IS NOT HERE. The version to move to arrives
+# as an environment variable, put there by a state machine, from a plan a person approved and a
+# named AWS principal authorised. Nothing in this file asks a model anything. The upgrade agent
+# reads and triages elsewhere, and its verdict reaches this build only as data the Python below
+# validates before acting on.
+#
+# THE COMMANDS ARE ASKED FOR, NOT SPELLED. Every mutation's argv comes from
+# `python -m eks_addon_readiness.upgrade_lane command --kind ...`, which is `remediate.py` under
+# unit test. So the flags that carry the design -- `--resolve-conflicts PRESERVE`, the ABSENCE of
+# `--atomic`, the named rollback revision, `-f values.yaml` -- cannot drift from the tests that
+# assert them, which is exactly what would happen if this file wrote its own `helm upgrade`.
+#
+# WHEN THIS BUILD FAILS, AND IT IS NOT WHEN THE COMPONENT IS BROKEN. A broken component that this
+# lane diagnosed and rolled back is the lane DOING ITS JOB, so the build succeeds and the result
+# object says ROLLED_BACK. The build fails when the lane could not complete its own protocol: the
+# fence refused, the diagnosis could not be captured, or the rollback did not work. The state
+# machine reads a failure as a refusal and its Catch still runs the access-entry cleanup.
+#
+# THE RESULT OBJECT IS THE RECORD, NOT THE EXIT CODE. `post_build` writes one JSON object to S3 as
+# its last act and the report stage reads THAT. Exported environment variables would be lost on
+# exactly the path that matters -- a failed `.sync` task hands the state machine an error, not a
+# build object -- so nothing this lane concluded is allowed to live only in the build's outputs.
+
+version: 0.2
+
+env:
+  # Deliberately no `variables:` block. Every value comes from the CodeBuild project (deployment
+  # facts, set in Terraform) or from the state machine's per-build overrides (what THIS run is
+  # about). A default here would be a third source and the one a reader would not think to check.
+  #
+  # No `secrets-manager:` and no `parameter-store:` either. This lane needs no secret: its
+  # identity is the build's IAM role and its cluster authority is the access entry the state
+  # machine created for that role moments ago.
+  git-credential-helper: no
+
+phases:
+  install:
+    # ONE SHELL BLOCK PER PHASE, with `set -euo pipefail`. CodeBuild's per-command failure
+    # handling is not `pipefail`, and a `helm ... | tee` that fails in the first element of the
+    # pipe would otherwise report success.
+    commands:
+      - |
+        set -euo pipefail
+        echo "== lane: ${COMPONENT} (run ${RUN_ID}, step ${STEP_ORDER}) on ${CLUSTER_NAME}"
+
+        # PINNED AND CHECKSUMMED. This phase reaches the public internet at the one moment that
+        # must not be improvised, so the version is pinned and the bytes are verified. A checksum
+        # mismatch fails the build BEFORE any identity is used, which is the fail-closed
+        # direction: no helm, no upgrade.
+        curl -fsSL -o /tmp/helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+        echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+        tar -xzf /tmp/helm.tar.gz -C /tmp
+        install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+
+        curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+        echo "${KUBECTL_SHA256}  /tmp/kubectl" | sha256sum -c -
+        install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+
+        # The lane's own library. `pydantic` validates every document it writes and `pyyaml`
+        # parses the manifest the fence inspects; both are the versions the repository pins.
+        python3 -m pip install --quiet --disable-pip-version-check "pydantic==2.13.4" "pyyaml==6.0.3"
+
+        helm version --short
+        kubectl version --client=true -o yaml | head -4
+
+  pre_build:
+    commands:
+      - |
+        set -euo pipefail
+        BUNDLE_BEFORE=/tmp/bundle/before
+        mkdir -p "${BUNDLE_BEFORE}/logs"
+        : > /tmp/commands-before.json.lines
+        echo '[]' > "${BUNDLE_BEFORE}/commands.json"
+
+        # EXPLICIT REGION ON EVERY AWS CALL. A region-scoped EKS call against the wrong default
+        # region returns an EMPTY result and no error, so an omitted `--region` does not fail --
+        # it reports that the cluster or the add-on is not there, which on this path would read
+        # as "nothing to upgrade".
+        aws eks update-kubeconfig \
+          --region "${TARGET_REGION}" \
+          --name "${CLUSTER_NAME}" \
+          --kubeconfig /tmp/kubeconfig \
+          --alias lane
+        export KUBECONFIG=/tmp/kubeconfig
+
+        # 1. PROVE THE BOUNDARY IS THERE, BEFORE TRUSTING IT.
+        #
+        # THIS BLOCK ASSERTED THE WRONG GUARANTEE AND REFUSED THE FIRST REAL LANE. It used to check
+        # that the lane could NOT patch `Deployment/coredns`, which was true when the Role named the
+        # release's own objects in `resourceNames`. The lane is now one generic type-scoped role
+        # serving any add-on -- deliberately, because a per-component fence had to be regenerated for
+        # every new component and broke whenever a chart added an object. RBAC cannot express "the
+        # objects this release owns", since that is a LABEL and RBAC matches only names.
+        #
+        # So the lane CAN patch coredns as far as the API server is concerned, this check fired
+        # correctly against a design that had changed under it, and it stopped the run before any
+        # mutation. Nothing was wrong except the assertion.
+        #
+        # WHAT IS ASSERTED NOW IS WHAT ACTUALLY BOUNDS THIS RUN. One RBAC property that still holds,
+        # and then the code fence itself -- because a preflight that did not exercise it would be
+        # proving the wrong thing again.
+        if [ "${MANAGED_ADDON}" != "true" ]; then
+          echo "-- can-i: the lane's own object (expect yes)"
+          kubectl auth can-i patch "deployments/${RELEASE}" -n "${RELEASE_NAMESPACE}" \
+            || { echo "REFUSED: this lane cannot patch its own Deployment. The lane's RBAC is missing or does not cover apps/deployments; nothing has been changed." >&2; exit 2; }
+
+          # THERE ARE NO NEGATIVE RBAC ASSERTIONS LEFT, AND THAT IS THE SECOND TIME THIS BLOCK HAS HAD
+          # TO LEARN THE SAME LESSON. It previously asserted that the lane could not patch
+          # `Deployment/coredns`, which stopped being true when the role went generic; it then
+          # asserted no cluster-wide write and no `deletecollection`, which stopped being true when
+          # the lane moved to `AmazonEKSClusterAdminPolicy` -- a policy whose rules are literally
+          # `*`/`*`/`*`. Each of those checks would now refuse EVERY lane, correctly, against a design
+          # that had changed under it.
+          #
+          # THE GENERAL RULE THIS BLOCK NOW FOLLOWS: a preflight may only assert properties the
+          # current design actually guarantees. A stale negative assertion is the most expensive kind
+          # of check, because it reads as a security finding and costs a human approval to discover.
+          #
+          # What the lane is bounded by instead is not visible to `can-i` at all -- the grant's
+          # LIFETIME (the access entry is deleted on every exit path), WHO holds it (never the agent),
+          # WHAT it applies (the approved chart's render, and Helm refuses to adopt another release's
+          # objects), and whether that render SHIPS the approved version. Only the last is checkable
+          # here, so it is the only thing checked, and checked properly: with a render that must be
+          # refused.
+
+          # THE CODE FENCE, PROVEN ON A DOCUMENT THAT MUST BE REFUSED. This exercises the one rule
+          # the fence still holds -- the render must ship the approved application version -- with
+          # a synthetic Deployment whose image tag is not that version. If that is accepted, the
+          # fence is not fencing and the real manifest check below would pass a pinned image.
+          #
+          # (It used to plant another release's instance label, then a kind not on a reviewed list.
+          # The fence judges neither any more: the render is `helm template` of the approved chart
+          # with this release's values, so every object in it is this release's whatever its kind,
+          # labels or namespace. Helm's own ownership check is what keeps the apply off objects
+          # another release already holds.)
+          #
+          # Written with printf rather than a heredoc: this whole phase is a YAML block scalar, and a
+          # heredoc inside one arrives with its terminator stripped of the indentation it needs.
+          echo "-- code fence: a render that does not ship ${TARGET_VERSION} (expect refusal)"
+          printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: not-%s\nspec:\n  template:\n    spec:\n      containers:\n      - name: pinned\n        image: example.invalid/%s:not-the-approved-version\n' \
+            "${RELEASE}" "${RELEASE}" > /tmp/off-lane.yaml
+          if python3 -m eks_addon_readiness.upgrade_lane fence-check \
+               --component "${COMPONENT}" \
+               --release "${RELEASE}" \
+               --namespace "${RELEASE_NAMESPACE}" \
+               --manifest /tmp/off-lane.yaml \
+               --application-version "${TARGET_VERSION}" >/dev/null 2>&1; then
+            echo "REFUSED: the code fence ACCEPTED a render that does not ship the approved version. It is the check that stops a pinned image from passing as an upgrade, so a fence that accepts this is no fence. Nothing has been changed." >&2
+            exit 2
+          fi
+        fi
+
+        # 2. THE VALUES, VERBATIM. Requirement 4 in one command: read what the release already
+        # has and re-supply it, so no parameter is lost while the version moves. On this cluster
+        # that carries `args: [--kubelet-insecure-tls]` for metrics-server, which is the
+        # difference between a component that can scrape kubelets and one that cannot.
+        if [ "${MANAGED_ADDON}" != "true" ]; then
+          helm get values "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o yaml > /tmp/values.yaml
+          cp /tmp/values.yaml "${BUNDLE_BEFORE}/values.yaml"
+          helm history "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o json > "${BUNDLE_BEFORE}/helm-history.json"
+          helm status "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o json > "${BUNDLE_BEFORE}/helm-status.json"
+          # WHAT THE RELEASE OWNS TODAY, as evidence. Beside the render that replaces it, so a
+          # person reading the bundle can diff what the upgrade would add or drop.
+          helm get manifest "${RELEASE}" -n "${RELEASE_NAMESPACE}" > "${BUNDLE_BEFORE}/manifest.yaml"
+
+          # THE REVISION TO ROLL BACK TO, RECORDED BEFORE ANYTHING MOVES. `helm rollback` with no
+          # revision means "whatever is previous NOW", and by the time a rollback is needed this
+          # lane has already added a revision -- possibly two. Naming the revision the release was
+          # on before the mutation is the only way back to the version a person approved moving
+          # away from.
+          CURRENT_REVISION="$(python3 -c "import json,sys;h=json.load(open('${BUNDLE_BEFORE}/helm-history.json'));print(max(r['revision'] for r in h))")"
+          echo "${CURRENT_REVISION}" > /tmp/rollback-revision
+          echo "-- current revision ${CURRENT_REVISION}"
+
+          # 3. RENDER WHAT WOULD BE APPLIED, AND LET THE FENCE REFUSE IT.
+          #
+          # `helm template` rather than `helm upgrade --dry-run`: template needs no cluster write
+          # and no release lock, so a refusal here costs nothing and leaves nothing half-done.
+          # This is the CODE half of the fence, standing where RBAC cannot -- `create` is not
+          # restrictable by resource name, so an object that would land on a neighbour is refused
+          # HERE, before the mutation, rather than being created and then cleaned up.
+          if [[ "${CHART_REF}" == oci://* ]]; then
+            # AN OCI CHART: no `helm repo add`, and no `index.yaml` to search. The chart version
+            # is asked for ONE candidate -- equal to the approved application version, bare then
+            # `v`-prefixed, the convention OCI charts such as karpenter follow -- and the pulled
+            # `Chart.yaml` must say it ships that release, or the run stops here in `set -e`.
+            rm -f "${BUNDLE_BEFORE}/helm-show-chart.yaml"
+            for CANDIDATE in "${TARGET_VERSION#v}" "v${TARGET_VERSION#v}"; do
+              if helm show chart "${CHART_REF}" --version "${CANDIDATE}" \
+                  > "${BUNDLE_BEFORE}/helm-show-chart.yaml" 2>/dev/null; then
+                break
+              fi
+              rm -f "${BUNDLE_BEFORE}/helm-show-chart.yaml"
+            done
+            python3 -m eks_addon_readiness.upgrade_lane resolve-oci-chart-version \
+              --chart-ref "${CHART_REF}" --application-version "${TARGET_VERSION}" \
+              --chart-yaml "${BUNDLE_BEFORE}/helm-show-chart.yaml" \
+              > /tmp/target-chart-version
+          else
+          helm repo add "${CHART_REPO_NAME}" "${CHART_REPO_URL}" >/dev/null
+          helm repo update >/dev/null
+
+          # THE CHART VERSION IS RESOLVED FROM THE REPOSITORY, BEFORE ANYTHING IS RENDERED. The
+          # approved step names an APPLICATION version; `helm upgrade --version` wants the CHART
+          # version, and the two are not derivable from each other -- so the repository the
+          # approved fact named is asked which chart ships the approved release, exactly as
+          # `describe-addon-versions` is asked for the `-eksbuild.<n>` below. An application
+          # version the repository does not ship is refused here, in the phase that carries
+          # `set -e`, so nothing is templated, fenced or applied for it. The listing goes in the
+          # bundle as evidence of what was chosen from.
+          helm search repo "${CHART_REF}" --versions -o json > "${BUNDLE_BEFORE}/helm-search.json"
+          python3 -m eks_addon_readiness.upgrade_lane resolve-chart-version \
+            --chart-ref "${CHART_REF}" --application-version "${TARGET_VERSION}" \
+            --search "${BUNDLE_BEFORE}/helm-search.json" \
+            > /tmp/target-chart-version
+          fi
+          echo "-- approved ${TARGET_VERSION}; the repository ships it as chart $(cat /tmp/target-chart-version)"
+
+          helm template "${RELEASE}" "${CHART_REF}" \
+            --version "$(cat /tmp/target-chart-version)" \
+            --namespace "${RELEASE_NAMESPACE}" \
+            --values /tmp/values.yaml > /tmp/rendered.yaml
+          cp /tmp/rendered.yaml "${BUNDLE_BEFORE}/rendered.yaml"
+
+          # THE PRE-MUTATION CHECK ON THE RENDER, run BEFORE `helm upgrade` rather than during it;
+          # a non-zero exit fails the phase, which the state machine reads as a refusal. Every
+          # document must be readable (carry a `kind`), and with `--application-version` the render
+          # must RUN the approved version. The values are re-supplied verbatim (correctly -- an
+          # operator's settings must survive), but a pinned `image.tag` would then move the chart
+          # and leave the component where it is, and every check after the mutation would call
+          # that healthy.
+          #
+          # What the fence deliberately does NOT do any more is judge kinds, labels or namespaces:
+          # the render is `helm template` of the approved chart with this release's values, so
+          # every object in it is this release's whatever upstream made it, and Helm's own
+          # ownership check keeps the apply off objects that belong to another release.
+          python3 -m eks_addon_readiness.upgrade_lane fence-check \
+            --component "${COMPONENT}" \
+            --release "${RELEASE}" \
+            --namespace "${RELEASE_NAMESPACE}" \
+            --manifest /tmp/rendered.yaml \
+            --application-version "${TARGET_VERSION}"
+        else
+          aws eks describe-addon --region "${TARGET_REGION}" \
+            --cluster-name "${CLUSTER_NAME}" --addon-name "${COMPONENT}" \
+            > "${BUNDLE_BEFORE}/describe-addon.json"
+          # THE VERSION AND THE CONFIGURATION, BOTH RECORDED BEFORE THE UPDATE. The version is
+          # the only way back; the configuration is what `PRESERVE` is for, and reading it here
+          # means the same configuration is re-supplied on the way forward AND on the way back.
+          python3 -c "import json;a=json.load(open('${BUNDLE_BEFORE}/describe-addon.json'))['addon'];print(a['addonVersion'])" > /tmp/rollback-addon-version
+          python3 -c "import json;a=json.load(open('${BUNDLE_BEFORE}/describe-addon.json'))['addon'];print(a.get('configurationValues') or '')" > /tmp/addon-config
+
+          # THE VERSION EKS WILL ACCEPT, RESOLVED FROM AWS'S OWN CATALOGUE, BEFORE ANYTHING MOVES.
+          #
+          # `TARGET_ADDON_VERSION` is the approved step's version and it is a bare
+          # `major.minor.patch` -- `PlanStep.recommended_version` is patterned
+          # `^\d+\.\d+\.\d+$` and cannot hold a build suffix. EKS names the same release
+          # `v<major>.<minor>.<patch>-eksbuild.<n>` and refuses every other spelling, so
+          # `--addon-version 1.23.1` is rejected with "Addon version specified is not supported".
+          # The `-eksbuild.<n>` ordinal is AWS's own rebuild counter and is not derivable from the
+          # semver, which is why this is a READ and not a format.
+          #
+          # IT HAPPENS IN THIS PHASE BECAUSE THIS PHASE CARRIES `set -e`. A version that cannot be
+          # resolved stops the run here, with nothing changed and the state machine reading a
+          # refusal -- rather than being discovered by the API afterwards, which on one
+          # test run cost a rejected call, the whole health window and
+          # a rollback on an add-on nothing had touched.
+          #
+          # THE CATALOGUE GOES IN THE BUNDLE, so the list the resolution chose from is evidence
+          # rather than a read nobody can revisit.
+          aws eks describe-addon-versions --region "${TARGET_REGION}" \
+            --addon-name "${COMPONENT}" > "${BUNDLE_BEFORE}/describe-addon-versions.json"
+          python3 -m eks_addon_readiness.upgrade_lane resolve-addon-version \
+            --addon "${COMPONENT}" --wanted "${TARGET_ADDON_VERSION}" \
+            --catalogue "${BUNDLE_BEFORE}/describe-addon-versions.json" \
+            > /tmp/target-addon-version
+          echo "-- approved ${TARGET_ADDON_VERSION}; EKS publishes it as $(cat /tmp/target-addon-version)"
+        fi
+
+        # 4. THE BEFORE BUNDLE. Captured on EVERY run, not only a failing one: a diagnosis that
+        # cannot be compared to the state before the change is a diagnosis nobody can read.
+        bash ./capture.sh "${BUNDLE_BEFORE}" || true
+        python3 -m eks_addon_readiness.upgrade_lane bundle-seal \
+          --dir "${BUNDLE_BEFORE}" --run-id "${RUN_ID}" --component "${COMPONENT}" \
+          --cluster "${CLUSTER_NAME}" --phase before \
+          ${MANAGED_ADDON:+$([ "${MANAGED_ADDON}" = "true" ] && echo --managed-addon)}
+        aws s3 cp --recursive --only-show-errors "${BUNDLE_BEFORE}" \
+          "s3://${EVIDENCE_BUCKET}/${DIAGNOSIS_PREFIX}/before/"
+        echo "s3://${EVIDENCE_BUCKET}/${DIAGNOSIS_PREFIX}/before/" > /tmp/before-uri
+
+        # The restart count to compare against after the move. A pod that is Running and has
+        # restarted four times since the upgrade is the commonest shape of a broken new version,
+        # and it is invisible to a phase check.
+        python3 -c "import json;p=json.load(open('${BUNDLE_BEFORE}/pods.json'));print(sum(c.get('restartCount',0) for i in p.get('items',[]) for c in (i.get('status',{}).get('containerStatuses') or [])))" > /tmp/restarts-before || echo 0 > /tmp/restarts-before
+
+  build:
+    commands:
+      - |
+        set -uo pipefail
+        export KUBECONFIG=/tmp/kubeconfig
+
+        # THE ONE MUTATION. Its exit status is RECORDED rather than allowed to abort the phase,
+        # because `post_build` is what captures the diagnosis and rolls back -- and a phase that
+        # aborted here would take the diagnosis with it. That is the whole reason this block does
+        # not carry `set -e`.
+        #
+        # ASKING FOR THE COMMAND CAN ITSELF BE A REFUSAL, AND A REFUSAL IS A NON-MUTATION.
+        # `command` exits 2 when the version is not one EKS publishes, which leaves `UPGRADE_CMD`
+        # empty -- and `eval ""` exits 0. So the ask's own status is captured rather than assumed.
+        CALL_STATUS=0
+        UPGRADE_CMD=""
+        if [ "${MANAGED_ADDON}" != "true" ]; then
+          # `/tmp/target-chart-version`: the chart version `pre_build` resolved from the
+          # repository for the approved application version. There is no other source for it.
+          UPGRADE_CMD="$(python3 -m eks_addon_readiness.upgrade_lane command \
+            --kind helm-upgrade --release "${RELEASE}" --chart "${CHART_REF}" \
+            --version "$(cat /tmp/target-chart-version)" --namespace "${RELEASE_NAMESPACE}" \
+            --values-file /tmp/values.yaml --history-max "${HISTORY_MAX}")" || CALL_STATUS=$?
+        else
+          # `/tmp/target-addon-version` and NOT `${TARGET_ADDON_VERSION}`: the environment carries
+          # the approved step's `major.minor.patch` and `pre_build` resolved it against AWS's
+          # published catalogue. See that phase.
+          UPGRADE_CMD="$(python3 -m eks_addon_readiness.upgrade_lane command \
+            --kind addon-update --cluster "${CLUSTER_NAME}" --region "${TARGET_REGION}" \
+            --addon "${COMPONENT}" --version "$(cat /tmp/target-addon-version)" \
+            --configuration-values "$(cat /tmp/addon-config)")" || CALL_STATUS=$?
+        fi
+
+        if [ "${CALL_STATUS}" != "0" ] || [ -z "${UPGRADE_CMD}" ]; then
+          if [ "${CALL_STATUS}" = "0" ]; then CALL_STATUS=1; fi
+          echo "the mutation command was refused (${CALL_STATUS}); nothing was applied" \
+            | tee /tmp/mutation.log
+          echo "no mutation was attempted: the command could not be built" > /tmp/mutation-command
+          date +%s > /tmp/mutation-at
+        else
+          echo "-- ${UPGRADE_CMD}"
+          echo "${UPGRADE_CMD}" > /tmp/mutation-command
+          eval "${UPGRADE_CMD}" 2>&1 | tee /tmp/mutation.log
+          CALL_STATUS="${PIPESTATUS[0]}"
+          # THE CLOCK'S ORIGIN. Every checkpoint offset is measured from the moment the change
+          # returned, not from the start of the build -- the install phase's downloads and the fence
+          # preflight are not part of a component's settling time and must not eat the window.
+          date +%s > /tmp/mutation-at
+        fi
+        echo "${CALL_STATUS}" > /tmp/mutation-call-status
+        echo "-- mutation exit ${CALL_STATUS}"
+
+        # THE POLL REPORTS ON THE COMPONENT. IT IS NOT THE RECORD OF WHETHER THE CALL WAS ACCEPTED,
+        # AND STORING BOTH IN ONE VARIABLE IS WHAT LAUNDERED A REJECTED UPGRADE INTO A SUCCESS.
+        #
+        # On one test run the `update-addon` was REJECTED -- exit 254,
+        # "Addon version specified is not supported" -- and a rejected call never moves the add-on
+        # off ACTIVE. The poll below used to write its own reading straight into
+        # `/tmp/mutation-status`, so it wrote 0 over the rejected call's 254, and the guard in
+        # `post_build` -- which already exists, is correct, and skips the health window on a failed
+        # mutation -- could not fire, because it had been told the mutation worked. Twenty-four
+        # minutes of health window, four agent checkpoints and a rollback, all on a component that
+        # was never modified.
+        #
+        # SO: TWO FACTS, TWO FILES. `mutation-call-status` is whether the API accepted the call;
+        # `addon-settle-status` is what the component's own status then said. Neither can overwrite
+        # the other, and the combination at the end of this phase is what `post_build` reads.
+        SETTLE_STATUS=0
+        if [ "${MANAGED_ADDON}" = "true" ] && [ "${CALL_STATUS}" = "0" ]; then
+          # An add-on update is asynchronous, so the call returning 0 says nothing about the
+          # add-on. Poll DescribeAddon to a terminal status.
+          #
+          # NOT POLLED AT ALL WHEN THE CALL FAILED. There is no update in flight to settle, and the
+          # ACTIVE this would read is the add-on's untouched steady state -- the very reading that
+          # told the lane a rejected call had succeeded.
+          #
+          # STARTS AT 1, SO A POLL THAT NEVER REACHES A TERMINAL STATUS IS A REFUSAL RATHER THAN A
+          # PASS. Falling out of the loop having seen only UPDATING or UNREADABLE is not evidence
+          # the add-on came up, and the comment here used to promise that while the code did the
+          # opposite: the status file kept whatever the call had left in it.
+          SETTLE_STATUS=1
+          for _ in $(seq 1 60); do
+            STATUS="$(aws eks describe-addon --region "${TARGET_REGION}" \
+              --cluster-name "${CLUSTER_NAME}" --addon-name "${COMPONENT}" \
+              --query 'addon.status' --output text 2>/dev/null || echo UNREADABLE)"
+            echo "-- addon status ${STATUS}"
+            case "${STATUS}" in
+              ACTIVE) SETTLE_STATUS=0; break ;;
+              DEGRADED|CREATE_FAILED|UPDATE_FAILED|DELETE_FAILED) SETTLE_STATUS=1; break ;;
+              *) sleep 15 ;;
+            esac
+          done
+        fi
+        echo "${SETTLE_STATUS}" > /tmp/addon-settle-status
+
+        # WHAT `post_build` READS, and the rule in one line: THE CALL'S OWN STATUS WINS, and the
+        # poll may only ADD a failure. A rejected call is a failed mutation whatever the
+        # component's steady state says about itself.
+        if [ "${CALL_STATUS}" != "0" ]; then
+          echo "${CALL_STATUS}" > /tmp/mutation-status
+        else
+          echo "${SETTLE_STATUS}" > /tmp/mutation-status
+        fi
+        echo "-- mutation status $(cat /tmp/mutation-status) (call ${CALL_STATUS}, settle ${SETTLE_STATUS})"
+        exit 0
+
+  post_build:
+    commands:
+      - |
+        set -uo pipefail
+        export KUBECONFIG=/tmp/kubeconfig
+        BUNDLE_AFTER=/tmp/bundle/after
+        mkdir -p "${BUNDLE_AFTER}/logs"
+        MUTATION_STATUS="$(cat /tmp/mutation-status 2>/dev/null || echo 99)"
+        MUTATION_AT="$(cat /tmp/mutation-at 2>/dev/null || date +%s)"
+        BEFORE_URI="$(cat /tmp/before-uri 2>/dev/null || echo '')"
+        RESTARTS_BEFORE="$(cat /tmp/restarts-before 2>/dev/null || echo 0)"
+        ATTEMPTED="$(cat /tmp/mutation-command 2>/dev/null || echo 'no mutation was attempted')"
+        AFTER_URI=""
+        STATUS=REFERRED
+        OBSERVED=""
+
+        # 1. THE CHECKPOINT LOOP. Code owns the clock: it decides when to ask and tells the agent
+        # how long has elapsed, how long remains, and whether this is the final call. Nothing here
+        # is decided by the model's own sense of time.
+        #
+        # FIRST HEALTHY ENDS THE LANE. First UNHEALTHY or REFER is final. SETTLING continues, and is
+        # withdrawn on the last checkpoint -- so the window is a DEADLINE rather than a sleep, and a
+        # component that comes up in 45 seconds costs 45 seconds.
+        VERDICT=""
+        ACTION=""
+        WHY=""
+        CHECKPOINTS_TAKEN=0
+        CHECKPOINT_LOG=/tmp/checkpoints.json.lines
+        : > "${CHECKPOINT_LOG}"
+        LAST_ELAPSED=0
+
+        ask_agent() {
+          # ask_agent <checkpoint> <elapsed> <is_final> -- sets VERDICT, ACTION, WHY. Never fatal:
+          # an unavailable agent leaves VERDICT empty and the floor decides, which is the property a
+          # model outage must not be able to take away.
+          local n="$1" elapsed="$2" final="$3"
+          FLOOR_FACTS_JSON="$(cat /tmp/floor-facts.json 2>/dev/null || echo '[]')"
+          python3 -c 'import json,os,sys; json.dump({"component":os.environ["COMPONENT"],"run_id":os.environ["RUN_ID"],"cluster":os.environ["CLUSTER_NAME"],"namespace":os.environ["RELEASE_NAMESPACE"],"release":os.environ["RELEASE"],"install_method":("EKS_MANAGED_ADDON" if os.environ.get("MANAGED_ADDON")=="true" else "HELM"),"installed":os.environ.get("INSTALLED_VERSION",""),"applied":os.environ.get("TARGET_VERSION",""),"summary":os.environ.get("STEP_SUMMARY",""),"floor_facts":json.loads(sys.argv[4]),"checkpoint":int(sys.argv[1]),"elapsed_seconds":int(sys.argv[2]),"deadline_seconds":int(os.environ["HEALTH_DEADLINE_SECONDS"]),"is_final":sys.argv[3]=="true"}, open("/tmp/ask.json","w"))' "$n" "$elapsed" "$final" "${FLOOR_FACTS_JSON}"
+
+          # STALE ANSWERS ARE WORSE THAN NO ANSWER. `|| true` below means a failed invocation leaves
+          # whatever the LAST checkpoint wrote sitting in /tmp/answer.json, and the parse that
+          # follows would report the previous reading as this one's. Measured while diagnosing this
+          # very call: a stale file from a run five days earlier read as a fresh AccessDenied.
+          rm -f /tmp/answer.json
+
+          # `--cli-read-timeout 0` AND ONE ATTEMPT, BOTH LOAD-BEARING. The CLI's default read timeout
+          # is SIXTY SECONDS and it retries on expiry -- and one checkpoint is now a whole model loop
+          # reading a cluster, measured at 85 to 123 seconds. Left at the defaults, a single
+          # `ask_agent` invoked this Lambda THREE times: three model loops, three sets of cluster
+          # reads, billed and run concurrently, while the caller abandoned each one and reported the
+          # checkpoint as unavailable. That did not show up while the proxy was failing in fifteen
+          # seconds; it appeared the moment the read path started working.
+          #
+          # Zero means "wait", not "give up immediately" -- the Lambda's own 900s timeout is what
+          # bounds this, and that is the limit an operator set.
+          AWS_MAX_ATTEMPTS=1 aws lambda invoke --region "${TARGET_REGION}" \
+            --cli-read-timeout 0 --cli-connect-timeout 10 \
+            --function-name "${TRIAGE_FUNCTION}" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb:///tmp/ask.json" \
+            /tmp/answer.json > /tmp/invoke.log 2>&1 || true
+
+          VERDICT="$(python3 -c 'import json;print(json.load(open("/tmp/answer.json")).get("verdict",""))' 2>/dev/null || echo '')"
+          ACTION="$(python3 -c 'import json;print(json.load(open("/tmp/answer.json")).get("proposed_action",""))' 2>/dev/null || echo '')"
+          WHY="$(python3 -c 'import json;r=json.load(open("/tmp/answer.json"));t=r.get("triage") or {};lines=list(t.get("observations") or [])+list(t.get("reasons") or []);print(" | ".join(lines)[:1200] or ("unavailable: "+str(r.get("reason",""))[:300]))' 2>/dev/null || echo 'the answer could not be read')"
+          # EVERY CHECKPOINT IS RECORDED, not only the decisive one. "HEALTHY at 45s" and "SETTLING
+          # four times then HEALTHY at 420s" are different stories about the same component.
+          python3 -c 'import json,sys; a=json.load(open("/tmp/answer.json")) if __import__("os").path.exists("/tmp/answer.json") else {}; print(json.dumps({"checkpoint":int(sys.argv[1]),"elapsed_seconds":int(sys.argv[2]),"verdict":a.get("verdict",""),"proposed_action":a.get("proposed_action",""),"triage":a.get("triage"),"reason":a.get("reason","")}))' "$n" "$elapsed" >> "${CHECKPOINT_LOG}" 2>/dev/null || true
+          CHECKPOINTS_TAKEN="$n"
+          LAST_ELAPSED="$elapsed"
+          echo "-- checkpoint ${n} at ${elapsed}s: ${VERDICT:-unavailable} / ${ACTION:-none}"
+        }
+
+        read_floor() {
+          # The floor, refreshed before every ask. Four things the API server states outright, which
+          # is what the agent is told it may explain but not contradict -- and what decides when the
+          # agent cannot be reached at all.
+          bash ./capture.sh "${BUNDLE_AFTER}" >/dev/null 2>&1 || true
+          python3 -m eks_addon_readiness.upgrade_lane validate \
+            --pods "${BUNDLE_AFTER}/pods.json" --logs "${BUNDLE_AFTER}/logs" \
+            --restarts-before "${RESTARTS_BEFORE}" > /tmp/floor.json 2>/tmp/floor.err || true
+          FLOOR_BROKEN="$(python3 -c 'import json;print(str(json.load(open("/tmp/floor.json"))["broken"]).lower())' 2>/dev/null || echo unknown)"
+          python3 -c 'import json;json.dump(json.load(open("/tmp/floor.json"))["reasons"],open("/tmp/floor-facts.json","w"))' 2>/dev/null || echo '[]' > /tmp/floor-facts.json
+          FLOOR_FACTS="$(python3 -c 'import json;print(" | ".join(json.load(open("/tmp/floor.json"))["reasons"]))' 2>/dev/null || echo '')"
+        }
+
+        nothing_was_applied() {
+          # Whether the component is verifiably still where it started. READ FROM THE COMPONENT AND
+          # NOT INFERRED FROM THE CALL'S EXIT CODE, because an exit code cannot tell a request EKS
+          # validated and refused from one it accepted and then failed to report on. The version --
+          # or the Helm revision -- recorded before the mutation is compared with what the component
+          # says NOW, and anything unreadable is not equal, so an unknown answer falls through to the
+          # rollback. That is the fail-closed direction: the cost of an unnecessary rollback is
+          # minutes, and the cost of a skipped necessary one is a component left on a broken version.
+          local before now
+          if [ "${MANAGED_ADDON}" = "true" ]; then
+            before="$(cat /tmp/rollback-addon-version 2>/dev/null || echo '')"
+            now="$(aws eks describe-addon --region "${TARGET_REGION}" \
+              --cluster-name "${CLUSTER_NAME}" --addon-name "${COMPONENT}" \
+              --query 'addon.addonVersion' --output text 2>/dev/null || echo UNREADABLE)"
+          else
+            before="$(cat /tmp/rollback-revision 2>/dev/null || echo '')"
+            now="$(helm history "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o json 2>/dev/null | python3 -c 'import json,sys;h=json.load(sys.stdin);print(max(r["revision"] for r in h))' 2>/dev/null || echo '')"
+          fi
+          if [ -n "${before}" ] && [ -n "${now}" ] && [ "${now}" = "${before}" ]; then
+            echo "-- the component is still on ${before}; nothing was applied"
+            return 0
+          fi
+          echo "-- recorded ${before:-unknown} before the mutation, component now ${now:-unreadable}"
+          return 1
+        }
+
+        mkdir -p "${BUNDLE_AFTER}/logs"
+        FLOOR_BROKEN=unknown
+        FLOOR_FACTS=""
+
+        if [ "${MUTATION_STATUS}" != "0" ]; then
+          # THE VERSION DID NOT LAND, so there is nothing to judge. Straight past the health window:
+          # asking an agent whether a component is healthy after a failed upgrade wastes a checkpoint
+          # on a question whose answer does not change what happens.
+          echo "-- mutation failed (${MUTATION_STATUS}); skipping the health window"
+          read_floor
+          # AND WHEN NOTHING WAS APPLIED THERE IS ALSO NOTHING TO ROLL BACK. A refused command, and a
+          # request EKS validated and rejected, both leave the component exactly where it was -- so a
+          # "rollback" is an update to the version it is already on, followed by two re-validation
+          # checkpoints that are each a whole model loop, measured at around 200 seconds apiece on one
+          # test run. Several minutes of work to restore a component
+          # nobody touched, ending in a report that says ROLLED_BACK about a lane that changed
+          # nothing, which is a worse answer than the truth.
+          #
+          # `REFUSED_BEFORE_MUTATION` IS THE TRUE ANSWER AND IT ALREADY EXISTED. The enum member, the
+          # report page's row and the notification's wording were all written for this case and the
+          # buildspec simply never emitted it. Its own comment in `models.py` says why it is not a
+          # kind of REFERRED: "we did not touch the cluster" is the single most important thing a
+          # reader can know, and burying it inside a general failure loses it.
+          if nothing_was_applied; then
+            DECISION=nothing-applied
+          else
+            DECISION=rollback
+          fi
+        else
+          N=0
+          DECISION=""
+          for OFFSET in ${HEALTH_CHECKPOINTS}; do
+            N=$(( N + 1 ))
+            NOW="$(( $(date +%s) - MUTATION_AT ))"
+            if [ "${NOW}" -lt "${OFFSET}" ]; then sleep "$(( OFFSET - NOW ))"; fi
+            ELAPSED="$(( $(date +%s) - MUTATION_AT ))"
+            IS_FINAL=false
+            [ "${OFFSET}" = "${HEALTH_DEADLINE_SECONDS}" ] && IS_FINAL=true
+
+            read_floor
+            if [ -n "${TRIAGE_FUNCTION}" ]; then
+              ask_agent "${N}" "${ELAPSED}" "${IS_FINAL}"
+            fi
+
+            case "${VERDICT}" in
+              HEALTHY)   DECISION=healthy; break ;;
+              UNHEALTHY) DECISION=rollback; break ;;
+              REFER)     DECISION=refer;   break ;;
+              SETTLING)  continue ;;
+              *)
+                # THE AGENT DID NOT ANSWER. The floor decides, and only when it has something to
+                # say: a stated fact is a rollback, and an empty floor keeps waiting rather than
+                # spending the whole window on a model that may come back.
+                if [ "${FLOOR_BROKEN}" = "true" ]; then DECISION=rollback; break; fi
+                ;;
+            esac
+          done
+
+          if [ -z "${DECISION}" ]; then
+            # THE WINDOW RAN OUT. Either the agent kept saying SETTLING to the end, or it was never
+            # reachable. Both mean the component is not established as healthy after the full
+            # deadline, which is the automatic-rollback condition -- so it rolls back, and a person
+            # is only involved if that does not restore health.
+            DECISION=rollback
+            WHY="${WHY} | the ${HEALTH_DEADLINE_SECONDS}s window expired without a HEALTHY verdict"
+          fi
+        fi
+
+        OBSERVED="floor: ${FLOOR_FACTS:-nothing stated as broken} | agent: ${WHY:-not asked or unavailable}"
+
+        # 2. THE AGENT AND THE CLUSTER MUST NOT DISAGREE ABOUT A FACT. A HEALTHY verdict over a
+        # stated CrashLoopBackOff means one of them misread something not open to interpretation,
+        # and a person settles that far more cheaply than a silent pass or a silent rollback.
+        if [ "${DECISION}" = "healthy" ] && [ "${FLOOR_BROKEN}" != "false" ]; then
+          DECISION=refer
+          OBSERVED="${OBSERVED} | the agent judged this healthy while the cluster states it is not, so neither side wins silently and a person must settle it"
+        fi
+        echo "-- decision ${DECISION}"
+
+        # 3. CAPTURE AND SEAL BEFORE ANY ROLLBACK. `bundle-seal --require-complete` refuses an
+        # incomplete bundle and `command --kind helm-rollback` refuses an unsealed one, so the
+        # ordering is a data dependency rather than a convention: there is no way to obtain the
+        # rollback command before the evidence is on disk.
+        SEALED=no
+        if [ "${DECISION}" != "healthy" ]; then
+          cp /tmp/values.yaml "${BUNDLE_AFTER}/values.yaml" 2>/dev/null || true
+          cp /tmp/rendered.yaml "${BUNDLE_AFTER}/rendered.yaml" 2>/dev/null || true
+          cp /tmp/mutation.log "${BUNDLE_AFTER}/logs/mutation.log" 2>/dev/null || true
+          cp "${CHECKPOINT_LOG}" "${BUNDLE_AFTER}/checkpoints.jsonl" 2>/dev/null || true
+          if [ "${MANAGED_ADDON}" != "true" ]; then
+            helm history "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o json > "${BUNDLE_AFTER}/helm-history.json" 2>/dev/null || true
+            helm status "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o json > "${BUNDLE_AFTER}/helm-status.json" 2>/dev/null || true
+          else
+            aws eks describe-addon --region "${TARGET_REGION}" --cluster-name "${CLUSTER_NAME}" \
+              --addon-name "${COMPONENT}" > "${BUNDLE_AFTER}/describe-addon.json" 2>/dev/null || true
+          fi
+          if python3 -m eks_addon_readiness.upgrade_lane bundle-seal \
+              --dir "${BUNDLE_AFTER}" --run-id "${RUN_ID}" --component "${COMPONENT}" \
+              --cluster "${CLUSTER_NAME}" --phase after --require-complete \
+              $([ "${MANAGED_ADDON}" = "true" ] && echo --managed-addon); then
+            SEALED=yes
+            aws s3 cp --recursive --only-show-errors "${BUNDLE_AFTER}" \
+              "s3://${EVIDENCE_BUCKET}/${DIAGNOSIS_PREFIX}/after/"
+            AFTER_URI="s3://${EVIDENCE_BUCKET}/${DIAGNOSIS_PREFIX}/after/"
+          fi
+        fi
+
+        # 4. ACT. The whole table, in one place.
+        if [ "${DECISION}" = "healthy" ]; then
+          STATUS=UPGRADED
+          # THE POST-UPGRADE STATE, UPLOADED ON THE HEALTHY PATH TOO. `read_floor` has already
+          # captured it into ${BUNDLE_AFTER} at every checkpoint; until this landed it was only
+          # uploaded when validation refused, so the report page could show a person the pods of a
+          # component that had just been upgraded ONLY as they were before the upgrade. Sealed
+          # WITHOUT `--require-complete`: a healthy component may legitimately have no
+          # `--previous` log, and the seal here licenses nothing -- no rollback reads it.
+          if [ "${MANAGED_ADDON}" != "true" ]; then
+            helm history "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o json > "${BUNDLE_AFTER}/helm-history.json" 2>/dev/null || true
+            helm status "${RELEASE}" -n "${RELEASE_NAMESPACE}" -o json > "${BUNDLE_AFTER}/helm-status.json" 2>/dev/null || true
+          fi
+          cp "${CHECKPOINT_LOG}" "${BUNDLE_AFTER}/checkpoints.jsonl" 2>/dev/null || true
+          if python3 -m eks_addon_readiness.upgrade_lane bundle-seal \
+              --dir "${BUNDLE_AFTER}" --run-id "${RUN_ID}" --component "${COMPONENT}" \
+              --cluster "${CLUSTER_NAME}" --phase after \
+              $([ "${MANAGED_ADDON}" = "true" ] && echo --managed-addon) >/dev/null 2>&1; then
+            if aws s3 cp --recursive --only-show-errors "${BUNDLE_AFTER}" \
+                "s3://${EVIDENCE_BUCKET}/${DIAGNOSIS_PREFIX}/after/"; then
+              AFTER_URI="s3://${EVIDENCE_BUCKET}/${DIAGNOSIS_PREFIX}/after/"
+            fi
+          fi
+        elif [ "${DECISION}" = "nothing-applied" ]; then
+          # THE ONE ROW THAT PERFORMS NO MUTATION AT ALL. Checked BEFORE the `SEALED` row on purpose:
+          # that row's message says a rollback was skipped to preserve evidence, which would be the
+          # wrong reason here. The bundle is still captured and sealed above -- it is the record of
+          # why the version was refused -- but nothing is applied and no re-validation runs, because
+          # there is nothing to re-validate.
+          STATUS=REFUSED_BEFORE_MUTATION
+          OBSERVED="${OBSERVED} | the mutation did not take effect and the component is still on the version it started on, so no rollback was performed: there was nothing to undo"
+        elif [ "${DECISION}" = "refer" ]; then
+          STATUS=REFERRED
+        elif [ "${SEALED}" != "yes" ]; then
+          # NO ROLLBACK WITHOUT EVIDENCE. Rolling back would destroy the only account of what
+          # happened, so the component is left on the new version and a person is told.
+          STATUS=REFERRED
+          OBSERVED="${OBSERVED} | the diagnosis bundle could not be completed, so no rollback was attempted: rolling back would have destroyed the only evidence of what happened"
+        else
+          if [ "${MANAGED_ADDON}" != "true" ]; then
+            ROLLBACK_CMD="$(python3 -m eks_addon_readiness.upgrade_lane command \
+              --kind helm-rollback --release "${RELEASE}" --namespace "${RELEASE_NAMESPACE}" \
+              --to-revision "$(cat /tmp/rollback-revision)" \
+              --bundle "${BUNDLE_AFTER}/manifest.json")"
+          else
+            ROLLBACK_CMD="$(python3 -m eks_addon_readiness.upgrade_lane command \
+              --kind addon-rollback --cluster "${CLUSTER_NAME}" --region "${TARGET_REGION}" \
+              --addon "${COMPONENT}" --version "$(cat /tmp/rollback-addon-version)" \
+              --configuration-values "$(cat /tmp/addon-config)" \
+              --bundle "${BUNDLE_AFTER}/manifest.json")"
+          fi
+          ATTEMPTED="${ATTEMPTED} ;; ${ROLLBACK_CMD}"
+          export ROLLBACK_CMD_RECORDED="${ROLLBACK_CMD}"
+          echo "-- ${ROLLBACK_CMD}"
+          if eval "${ROLLBACK_CMD}" 2>&1 | tee -a /tmp/mutation.log; then
+            # 5. RE-VALIDATE. A rollback that returned is not the same as a component that came
+            # home, and the difference is exactly what a person needs to know. Two short
+            # checkpoints, then the answer stands.
+            STATUS=ROLLED_BACK
+            REVALIDATED=no
+            for OFFSET in ${REVALIDATION_CHECKPOINTS}; do
+              sleep "${OFFSET}"
+              read_floor
+              if [ -n "${TRIAGE_FUNCTION}" ]; then
+                ask_agent "$(( CHECKPOINTS_TAKEN + 1 ))" "$(( $(date +%s) - MUTATION_AT ))" true
+              fi
+              if [ "${VERDICT}" = "HEALTHY" ] && [ "${FLOOR_BROKEN}" = "false" ]; then
+                REVALIDATED=yes
+                break
+              fi
+            done
+            if [ "${REVALIDATED}" != "yes" ]; then
+              # THE WORST OUTCOME THIS STAGE REACHES: the component is on neither version cleanly.
+              # A rollback that does not restore health means the previous version is broken too, or
+              # the cause was never the version at all -- and either way a person must look.
+              STATUS=REFERRED
+              OBSERVED="${OBSERVED} | the rollback completed and the component is STILL not healthy, so the previous version is broken too or the cause was never the version. A person must look."
+            fi
+          else
+            STATUS=REFERRED
+            OBSERVED="${OBSERVED} | the rollback itself failed, so the component is on neither version cleanly and a human must decide"
+          fi
+        fi
+
+        # WHAT ACTUALLY RUNS NOW, read off the cluster for the report's `resulting`. `applied` is
+        # what was asked for; this is the image tag the component's pods carry after everything
+        # above -- the upgrade, or the rollback. For a managed add-on it is the add-on version EKS
+        # reports. Empty when it cannot be read; the report then shows `applied` alone.
+        RESULTING=""
+        if [ "${MANAGED_ADDON}" != "true" ]; then
+          kubectl get pods -n "${RELEASE_NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE}" -o json > /tmp/pods-now.json 2>/dev/null \
+            && RESULTING="$(python3 -m eks_addon_readiness.upgrade_lane running-version --pods /tmp/pods-now.json 2>/dev/null || echo '')"
+        else
+          RESULTING="$(aws eks describe-addon --region "${TARGET_REGION}" --cluster-name "${CLUSTER_NAME}" --addon-name "${COMPONENT}" --query addon.addonVersion --output text 2>/dev/null || echo '')"
+        fi
+        echo "-- running now: ${RESULTING:-unknown}"
+
+        # THE RESULT OBJECT IS THE LAST THING WRITTEN AND IT IS WRITTEN ON EVERY PATH. The report
+        # stage reads these, one per approved component, and a component with no result object is
+        # reported as REFERRED rather than omitted -- an omission reads as "nothing to say".
+        python3 - "$STATUS" "$ATTEMPTED" "$OBSERVED" "$BEFORE_URI" "$AFTER_URI" "$RESULTING" <<'PY' > /tmp/lane-result.json
+        import json, os, sys
+        status, attempted, observed, before_uri, after_uri, resulting = sys.argv[1:7]
+        json.dump(
+            {
+                "run_id": os.environ["RUN_ID"],
+                "step_order": int(os.environ["STEP_ORDER"]),
+                "component": os.environ["COMPONENT"],
+                "status": status,
+                "managed_addon": os.environ.get("MANAGED_ADDON") == "true",
+                "installed": os.environ.get("INSTALLED_VERSION", ""),
+                # The approved application version. For a Helm step the chart version the
+                # repository resolved it to is in the bundle's `helm-search.json` and the
+                # mutation command; the report speaks in application versions like the plan.
+                "applied": os.environ.get("TARGET_VERSION", ""),
+                "resulting": resulting,
+                "attempted": [part.strip() for part in attempted.split(";;") if part.strip()],
+                "observed": [part.strip() for part in observed.split("|") if part.strip()],
+                "diagnosis_before_uri": before_uri,
+                "diagnosis_after_uri": after_uri,
+                "checkpoints": [
+                    json.loads(line)
+                    for line in open("/tmp/checkpoints.json.lines", encoding="utf-8")
+                    if line.strip()
+                ]
+                if os.path.exists("/tmp/checkpoints.json.lines")
+                else [],
+                "rollback_command": os.environ.get("ROLLBACK_CMD_RECORDED", ""),
+            },
+            sys.stdout,
+            indent=2,
+        )
+        PY
+        aws s3 cp --only-show-errors /tmp/lane-result.json \
+          "s3://${EVIDENCE_BUCKET}/${LANE_RESULT_KEY}"
+        echo "-- lane result: ${STATUS}"
+
+        # THE EXIT CODE SAYS WHETHER THE LANE COMPLETED ITS OWN PROTOCOL, not whether the
+        # component was healthy. A component this lane diagnosed and returned to its previous
+        # version was handled, so the build succeeds; a referral means the lane could not finish
+        # its job and the state machine's Catch treats it as a refusal. Either way the access
+        # entry is deleted by the state that follows, on both edges.
+        case "${STATUS}" in
+          UPGRADED|ROLLED_BACK) exit 0 ;;
+          *) exit 1 ;;
+        esac
+
+artifacts:
+  # NO ARTIFACTS. Everything this lane produces is written to S3 under the run's own prefix by the
+  # commands above, with keys the state machine and the report stage already know. A CodeBuild
+  # artifact would be a second copy under a key nothing reads.
+  files: []
+  discard-paths: yes

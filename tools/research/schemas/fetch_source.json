@@ -1,0 +1,40 @@
+[
+  {
+    "name": "fetch_source",
+    "description": "Fetch one page from the component's own repository or documentation, pinned to a commit or tag. Returns the page text and the digest of the bytes recorded for it. Refuses any host the component does not declare as its own, and says what is in scope. Every successful fetch is recorded BEFORE you see it, and every quote you write is checked against that recording byte-for-byte, so a quote assembled from two pages or two revisions will fail. Quote one contiguous span from one fetch.",
+    "inputSchema": {
+      "type": "object",
+      "description": "The pinned page to read.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Absolute https URL. A GitHub blob URL is read as its raw bytes."
+        },
+        "revision": {
+          "type": "string",
+          "description": "The commit sha or tag this URL is pinned to. Empty only for an unversioned documentation page. A date is not a revision and is rejected downstream."
+        },
+        "canonical_repository": {
+          "type": "string",
+          "description": "The component's canonical GitHub repository. Supplying it permits the hosts that serve that repository; without it only hosts the component already declares are readable."
+        },
+        "official_documentation": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Documentation hosts the component declares as its own."
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The research session this fetch belongs to. Scopes the recorded evidence so the judging layer finds exactly the bytes this run read."
+        }
+      },
+      "required": [
+        "url",
+        "revision",
+        "session_id"
+      ]
+    }
+  }
+]

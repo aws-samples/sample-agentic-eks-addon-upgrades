@@ -1,0 +1,20 @@
+{
+  "bucket": "eks-addon-upgrades-123456789012-us-east-1",
+  "cluster_name": "my-eks-cluster",
+  "region": "us-east-1",
+  "release": {
+    "approval_status": [
+      "Approved"
+    ],
+    "approved_steps": [
+      4
+    ],
+    "approver_decisions": [
+      "{\"Approver\":\"arn:aws:iam::123456789012:role/Admin\",\"Decision\":\"Approve\",\"ApprovalDecisionTime\":\"2026-09-20T15:50:55.691939746Z\"}",
+      "{\"Approver\":\"arn:aws:iam::123456789012:role/my-eks-cluster-terraform\",\"Decision\":\"Waiting\"}"
+    ],
+    "automation_execution_id": "00000000-0000-4000-8000-000000000009",
+    "cluster": "my-eks-cluster",
+    "run_id": "00000000-0000-4000-8000-000000000006"
+  }
+}

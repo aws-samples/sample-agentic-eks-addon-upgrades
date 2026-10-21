@@ -1,0 +1,254 @@
+{
+ "extraction": {
+  "assessment": {
+   "action": "UPGRADE",
+   "caveats": [
+    "Karpenter's Helm chart is published only as an OCI artifact (oci://public.ecr.aws/karpenter/karpenter); the getting-started install page shows no 'helm repo add <alias> <url>' line, so chart.repository_url cannot be provided.",
+    "The Upgrade Guide states CRDs are coupled to the Karpenter version and recommends managing them with the independent 'karpenter-crd' Helm chart alongside every controller upgrade, since standard Helm chart upgrades do not add or remove CRDs.",
+    "The Upgrade Guide warns that Karpenter 1.6.0 changed native ODCR handling: if open-eligibility ODCRs are used without capacityReservationSelectorTerms set on the EC2NodeClass, Karpenter stops using those reservations after the upgrade (falling back to on-demand while the reservation is still billed) unless configured before upgrading.",
+    "The Upgrade Guide warns that the v1.8.4 release contains a scheduling regression affecting pods with specific TopologySpreadConstraint configurations and should not be installed; use v1.8.8 or later/earlier instead.",
+    "The Upgrade Guide repeats a warning that Karpenter 1.1.0 dropped support for v1beta1 APIs and that clusters must follow the v1 Migration Guide before upgrading to 1.1.0+; this only applies if any pre-v1 (v1beta1) resources still exist, which should not be the case since the installed version (1.0.5) is already on v1 APIs.",
+    "No first-party statement was found that names Kubernetes 1.36 support for karpenter series newer than 1.13.x (e.g. 1.14.x) explicitly; the recommendation that v1.14.1 covers 1.36 rests on it numerically exceeding the stated '>= 1.13' floor, not on an explicit statement naming 1.14.x and 1.36 together."
+   ],
+   "cited_sources": [
+    {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/",
+     "used_for": "compatibility matrix (Kubernetes minor -> minimum karpenter version, all 7 columns 1.30-1.36)"
+    },
+    {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/",
+     "used_for": "confirms latest release version (KARPENTER_VERSION=1.14.1) and shows the OCI-only helm install command (no helm repo add line)"
+    },
+    {
+     "revision": "main",
+     "url": "https://github.com/aws/karpenter-provider-aws/releases",
+     "used_for": "release list (v1.14.1 LTS/latest, v1.11.3, v1.10.2, v1.9.2 LTS, v1.8.8, v1.7.6, v1.6.8, v1.5.8, v1.4.4, v1.3.8)"
+    },
+    {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/upgrade-guide/",
+     "used_for": "upgrade path notes: CRD upgrade guidance, per-minor breaking changes (ODCR at 1.6.0, TopologySpreadConstraint regression at 1.8.4, v1beta1 drop at 1.1.0)"
+    }
+   ],
+   "confidence_rationale": "The karpenter.sh Compatibility Matrix (an official-docs page, not the code repository) states, per Kubernetes minor column, the minimum karpenter version required: Kubernetes 1.31 requires >= 1.0.5, Kubernetes 1.35 requires >= 1.9, and Kubernetes 1.36 (the target) requires >= 1.13. The installed release, karpenter 1.0.5, is exactly the version named as the floor for Kubernetes 1.31 and is not named for any higher column, so it is outside its stated window for the 1.36 target. The newest stable release actually found in the project's release history, v1.14.1 (tagged LTS, marked 'Latest'), numerically exceeds both the '>= 1.9' floor stated for the current Kubernetes 1.35 and the '>= 1.13' floor stated for the target Kubernetes 1.36, so it spans both minors and can be upgraded before the cluster control-plane move.",
+   "covers_current_kubernetes": true,
+   "covers_target_kubernetes": true,
+   "current_kubernetes": "1.35",
+   "derivation": null,
+   "evidence_tier": "MATRIX_IN_OFFICIAL_DOCS",
+   "installed_version": "1.0.5",
+   "installed_version_statement_refs": [
+    1
+   ],
+   "installed_version_status": "OUTSIDE_STATED_WINDOW",
+   "not_found": [
+    "A tagged GitHub release for karpenter 1.0.5 was not located on the first page of the releases listing (https://github.com/aws/karpenter-provider-aws/releases); its existence as a release is confirmed only indirectly via the compatibility matrix's '>= 1.0.5' pin for Kubernetes 1.31.",
+    "A tagged GitHub release for a 1.13.x series version was not located on the first page of the releases listing; the newest release actually sighted is v1.14.1.",
+    "chart.repository_url: no 'helm repo add' line exists on the project's install page because the chart is distributed only via an OCI registry reference."
+   ],
+   "proposed_confidence": "HIGH",
+   "recommendation_statement_refs": [
+    5,
+    6
+   ],
+   "recommended_chart_version": null,
+   "recommended_series": "1.14.x",
+   "recommended_version": "1.14.1",
+   "target_kubernetes": "1.36",
+   "upgrade_ordering": "BEFORE_CLUSTER_UPGRADE",
+   "upgrade_path_claim_refs": []
+  },
+  "canonical_repository": "https://github.com/aws/karpenter-provider-aws",
+  "chart": null,
+  "claims": [],
+  "component_id": "karpenter",
+  "found": true,
+  "no_compatibility_found": false,
+  "not_found_reason": null,
+  "official_documentation": [
+   "https://karpenter.sh"
+  ],
+  "recommended_version": "1.14.1",
+  "releases": [
+   {
+    "quote": "v1.14.1 (LTS)",
+    "source": {
+     "revision": "main",
+     "url": "https://github.com/aws/karpenter-provider-aws/releases"
+    },
+    "version": "1.14.1"
+   },
+   {
+    "quote": "v1.11.3",
+    "source": {
+     "revision": "main",
+     "url": "https://github.com/aws/karpenter-provider-aws/releases"
+    },
+    "version": "1.11.3"
+   },
+   {
+    "quote": "v1.10.2",
+    "source": {
+     "revision": "main",
+     "url": "https://github.com/aws/karpenter-provider-aws/releases"
+    },
+    "version": "1.10.2"
+   },
+   {
+    "quote": "v1.9.2 (LTS)",
+    "source": {
+     "revision": "main",
+     "url": "https://github.com/aws/karpenter-provider-aws/releases"
+    },
+    "version": "1.9.2"
+   },
+   {
+    "quote": "v1.8.8",
+    "source": {
+     "revision": "main",
+     "url": "https://github.com/aws/karpenter-provider-aws/releases"
+    },
+    "version": "1.8.8"
+   },
+   {
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "version": "1.0.5"
+   }
+  ],
+  "statements": [
+   {
+    "kind": "ENUMERATED_MINORS",
+    "qualifier_quote": null,
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "served_api_versions": [],
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [
+     "1.30"
+    ],
+    "version_spec": "0.37.x"
+   },
+   {
+    "kind": "ENUMERATED_MINORS",
+    "qualifier_quote": null,
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "served_api_versions": [],
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [
+     "1.31"
+    ],
+    "version_spec": "1.0.5"
+   },
+   {
+    "kind": "ENUMERATED_MINORS",
+    "qualifier_quote": null,
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "served_api_versions": [],
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [
+     "1.32"
+    ],
+    "version_spec": "1.2.x"
+   },
+   {
+    "kind": "ENUMERATED_MINORS",
+    "qualifier_quote": null,
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "served_api_versions": [],
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [
+     "1.33"
+    ],
+    "version_spec": "1.5.x"
+   },
+   {
+    "kind": "ENUMERATED_MINORS",
+    "qualifier_quote": null,
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "served_api_versions": [],
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [
+     "1.34"
+    ],
+    "version_spec": "1.6.x"
+   },
+   {
+    "kind": "ENUMERATED_MINORS",
+    "qualifier_quote": null,
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "served_api_versions": [],
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [
+     "1.35"
+    ],
+    "version_spec": "1.9.x"
+   },
+   {
+    "kind": "ENUMERATED_MINORS",
+    "qualifier_quote": null,
+    "quote": "<table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table>",
+    "served_api_versions": [],
+    "source": {
+     "revision": "main",
+     "url": "https://karpenter.sh/docs/upgrading/compatibility/"
+    },
+    "stated_maximum_inclusive": null,
+    "stated_minimum": null,
+    "stated_minors": [
+     "1.36"
+    ],
+    "version_spec": "1.13.x"
+   }
+  ],
+  "version_series": "1.0.x"
+ },
+ "pages": [
+  {
+   "url": "https://github.com/aws/karpenter-provider-aws/releases",
+   "revision": "main",
+   "body": "\n    <a aria-label=\"v1.14.1 (LTS)\" title=\"v1.14.1 (LT\n...\nta-item-id=\"release-v1.11.3\" data-targets=\"nav-\n...\nta-item-id=\"release-v1.10.2\" data-targets=\"nav-\n...\n\n    <a aria-label=\"v1.9.2 (LTS)\" title=\"v1.9.2 (LTS\n...\nta-item-id=\"release-v1.8.8\" data-targets=\"nav-",
+   "status": 200
+  },
+  {
+   "url": "https://karpenter.sh/docs/upgrading/compatibility/",
+   "revision": "main",
+   "body": "tibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility\n...\ntibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility\n...\ntibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility\n...\ntibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility\n...\ntibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility\n...\ntibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility\n...\ntibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility\n...\ntibility Matrix</h2><table><thead><tr><th>Kubernetes</th><th>1.30</th><th>1.31</th><th>1.32</th><th>1.33</th><th>1.34</th><th>1.35</th><th>1.36</th></tr></thead><tbody><tr><td>karpenter</td><td>>= 0.37</td><td>>= 1.0.5</td><td>>= 1.2</td><td>>= 1.5</td><td>>= 1.6</td><td>>= 1.9</td><td>>= 1.13</td></tr></tbody></table><h2 id=compatibility",
+   "status": 200
+  }
+ ]
+}

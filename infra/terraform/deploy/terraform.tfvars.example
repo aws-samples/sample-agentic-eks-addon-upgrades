@@ -1,0 +1,73 @@
+# Copy to terraform.tfvars, then replace every <PLACEHOLDER>. terraform.tfvars is gitignored.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Every variable this deploy accepts is listed below. REQUIRED values are <PLACEHOLDERS>;
+# everything else is already set to its default and can be left alone.
+
+# =====================================================================================
+# REQUIRED
+# =====================================================================================
+
+# The EKS cluster this deployment assesses. Every run scans it, and its cluster-admin access
+# entries decide who may authorise a release -- nobody else can. With the upgrade stage on
+# (below), it is also the one cluster upgrades may change.
+target_cluster = "<CLUSTER_NAME>"
+
+# Who receives approval requests, and who they are sent from. SES mails the From address a
+# verification link after the first apply; click it. While your account's SES is in sandbox
+# mode, every recipient must be verified too. The mailed links ARE the approval capability,
+# so only list people who may approve.
+approval_email_from = "<YOUR_EMAIL>"
+approval_email_to   = ["<YOUR_EMAIL>"]
+
+# =====================================================================================
+# OPTIONAL -- defaults shown
+# =====================================================================================
+
+# Region for every resource. Bedrock model access to Anthropic Claude Sonnet must be enabled here.
+region = "us-east-1"
+
+# Prefix for every resource name. Change it to run two copies in one account.
+# 3-24 characters: lowercase letters, digits and hyphens, starting with a letter.
+name_prefix = "eks-addon-upgrades"
+
+# Tags applied to every resource.
+tags = {
+  Project = "eks-addon-upgrades"
+}
+
+# Default target Kubernetes version for a run. Can also be set per run in the execution input.
+target_kubernetes_version = "1.36"
+
+# How long the release gate waits for an authorisation before failing the run (seconds).
+release_approval_timeout_seconds = 7200
+
+# A Secrets Manager secret holding a GitHub token. Raises GitHub's rate limit from 60 to 5000
+# requests per hour; without it some lookups report "could not look". Create it by hand:
+#   aws secretsmanager create-secret --name github-token --secret-string '<TOKEN>'
+# then paste the ARN it prints here.
+github_token_secret_arn = null
+
+# =====================================================================================
+# UPGRADE STAGE -- the part that changes a cluster. Leave OFF for a first try.
+# =====================================================================================
+# Off: runs end on a readiness report and nothing writes to any cluster.
+# On:  approved upgrades run against target_cluster, after a per-step upgrade approval
+#      and the release gate.
+# Switching it is `make deploy` with this value changed: only the state machine changes (it gains
+# or loses the upgrade states). The upgrade resources exist either way.
+upgrade_stage_enabled = false
+
+# Lane tuning. Only used when the upgrade stage is on.
+upgrade_lane_groups              = ["upgrade-agent"]
+upgrade_health_deadline_seconds  = 900
+upgrade_health_checkpoints       = [180, 420, 660, 900]
+upgrade_revalidation_checkpoints = [30, 60]
+upgrade_build_timeout_minutes    = 60
+
+# Tool versions the lane downloads. Each version is pinned with its SHA-256; change both together.
+upgrade_helm_version    = "v3.16.4"
+upgrade_helm_sha256     = "fc307327959aa38ed8f9f7e66d45492bb022a66c3e5da6063958254b9767d179"
+upgrade_kubectl_version = "v1.35.0"
+upgrade_kubectl_sha256  = "a2e984a18a0c063279d692533031c1eff93a262afcc0afdc517375432d060989"
